@@ -1,0 +1,84 @@
+package x.vladgba.fileman
+
+import android.app.Activity
+import android.app.AlertDialog
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.webkit.MimeTypeMap
+import android.widget.Toast
+import java.io.File
+
+/**
+ * Module hook. Built-in viewers implement this and are listed in [Openers.modules]; on tap, the first module
+ * whose [canOpen] matches handles the file. Unclaimed files go to an external app via ACTION_VIEW, and
+ * "Open with…" lists every module plus "Other app".
+ */
+interface FileOpener {
+    /** Name shown in "Open with…". */
+    val title: Int
+    /** Claim this file on a plain tap. */
+    fun canOpen(f: File): Boolean
+    fun open(a: Activity, f: File)
+}
+
+object Openers {
+    const val EXTRA_PATH = "x.vladgba.fileman.PATH"
+
+    val modules: MutableList<FileOpener> = mutableListOf(TextModule, ViewerModule, HexModule)
+
+    fun open(a: Activity, f: File) {
+        modules.firstOrNull { it.canOpen(f) }?.let { it.open(a, f); return }
+        if (!external(a, f, chooser = false)) chooser(a, f) // no external app: offer the built-in modules
+    }
+
+    /** "Open with…": built-in modules first, then any installed app. */
+    fun chooser(a: Activity, f: File) {
+        val labels = (modules.map { a.getString(it.title) } + a.getString(R.string.other_app)).toTypedArray()
+        AlertDialog.Builder(a)
+            .setTitle(R.string.open_with)
+            .setItems(labels) { _, i ->
+                if (i < modules.size) modules[i].open(a, f) else if (!external(a, f, chooser = true)) toast(a)
+            }
+            .show()
+    }
+
+    fun launch(a: Activity, cls: Class<out Activity>, f: File) {
+        a.startActivity(Intent(a, cls).putExtra(EXTRA_PATH, f.absolutePath))
+    }
+
+    /** Returns false if no app can handle the file. */
+    fun external(a: Activity, f: File, chooser: Boolean): Boolean {
+        val view = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(FilesProvider.uri(a, f), mime(f))
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        return start(a, if (chooser) Intent.createChooser(view, f.name) else view)
+    }
+
+    fun share(a: Activity, files: List<File>) {
+        val uris = files.map { FilesProvider.uri(a, it) }
+        val type = files.map { mime(it) }.distinct().singleOrNull() ?: "*/*"
+        val send = if (uris.size == 1) {
+            Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0])
+        } else {
+            Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList<Uri>(uris))
+        }
+        send.setType(type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        if (!start(a, Intent.createChooser(send, null))) toast(a)
+    }
+
+    private fun start(a: Activity, i: Intent): Boolean = try {
+        a.startActivity(i)
+        true
+    } catch (e: ActivityNotFoundException) {
+        false
+    }
+
+    private fun toast(a: Activity) = Toast.makeText(a, R.string.no_app, Toast.LENGTH_SHORT).show()
+
+    fun mime(f: File): String {
+        val ext = f.name.substringAfterLast('.', "").lowercase()
+        return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+            ?: if (Syntax.isText(f)) "text/plain" else "*/*"
+    }
+}

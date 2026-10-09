@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">UniFX</string>
+    <string name="internal">Internal storage</string>
+    <string name="sd_card">SD card</string>
+    <string name="app_files">App files</string>
+    <string name="root">Root /</string>
+    <string name="grant_access">UniFX needs storage access to show your files. Tap to grant.</string>
+    <string name="empty">Empty folder</string>
+    <string name="cannot_read">Can\'t read this folder</string>
+    <string name="items">%d items</string>
+    <string name="search">Search</string>
+    <string name="paste">Paste (%d)</string>
+    <string name="new_folder">New folder</string>
+    <string name="new_file">New file</string>
+    <string name="sort">Sort</string>
+    <string name="sort_name">Name</string>
+    <string name="sort_size">Size</string>
+    <string name="sort_date">Date</string>
+    <string name="sort_type">Type</string>
+    <string name="descending">Descending</string>
+    <string name="show_hidden">Show hidden</string>
+    <string name="storage">Storage</string>
+    <string name="refresh">Refresh</string>
+    <string name="select_all">Select all</string>
+    <string name="copy">Copy</string>
+    <string name="cut">Cut</string>
+    <string name="delete">Delete</string>
+    <string name="rename">Rename</string>
+    <string name="share">Share</string>
+    <string name="open_with">Open with…</string>
+    <string name="properties">Properties</string>
+    <string name="delete_confirm">Delete %d item(s)? This can\'t be undone.</string>
+    <string name="bad_name">Invalid name</string>
+    <string name="exists">Already exists</string>
+    <string name="failed">Operation failed</string>
+    <string name="partly_failed">%d item(s) failed</string>
+    <string name="done">Done</string>
+    <string name="into_itself">Can\'t paste a folder into itself</string>
+    <string name="copied">%d item(s) ready to paste</string>
+    <string name="no_app">No app can open this file</string>
+    <string name="cannot_open">Can\'t open this file</string>
+    <string name="view_grid">Grid view</string>
+    <string name="view_list">List view</string>
+    <string name="other_app">Other app…</string>
+
+    <!-- Editors (shared) -->
+    <string name="text_editor">Text editor</string>
+    <string name="hex_editor">Hex editor</string>
+    <string name="save">Save</string>
+    <string name="saved">Saved</string>
+    <string name="discard">Discard</string>
+    <string name="unsaved_title">Unsaved changes</string>
+    <string name="unsaved_msg">Save changes to %s?</string>
+    <string name="read_only">read-only</string>
+    <string name="find">Find</string>
+    <string name="not_found">Not found</string>
+    <string name="open_in_hex">Open in hex editor</string>
+    <string name="open_in_text">Open in text editor</string>
+    <string name="highlight_code">Highlight code</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
+    <string name="back">Back</string>
+    <string name="more">More</string>
+    <string name="show_invisibles">Show unprintable characters</string>
+
+    <!-- Text editor -->
+    <string name="find_hint">Find</string>
+    <string name="replace_hint">Replace with</string>
+    <string name="replace">Replace</string>
+    <string name="replace_all">All</string>
+    <string name="replaced">%d replaced</string>
+    <string name="go_to_line">Go to line</string>
+    <string name="word_wrap">Word wrap</string>
+    <string name="line_numbers">Line numbers</string>
+    <string name="font_bigger">Larger text</string>
+    <string name="font_smaller">Smaller text</string>
+    <string name="binary_title">Binary file</string>
+    <string name="open_anyway">Edit as text anyway</string>
+    <string name="too_large">Large file (%s): opened read-only</string>
+
+    <!-- Text viewer -->
+    <string name="text_viewer">Text viewer (read-only)</string>
+    <string name="edit">Edit</string>
+    <string name="binary">binary</string>
+    <string name="lines_count">%,d lines</string>
+    <string name="indexing">indexing… %d%%</string>
+    <string name="still_indexing">Still indexing, try again in a moment</string>
+    <string name="line_copied">Line copied</string>
+
+    <!-- Hex editor -->
+    <string name="go_to_offset">Go to offset</string>
+    <string name="hex">Hex</string>
+    <string name="decimal">Decimal</string>
+    <string name="text">Text</string>
+    <string name="find_next">Find next</string>
+    <string name="write_text">Write text at cursor</string>
+    <string name="keypad">Keypad</string>
+    <string name="empty_file">Empty file</string>
+    <string name="searching">Searching…</string>
+    <string name="bad_hex">Invalid hex (use pairs like DE AD BE EF)</string>
+    <string name="out_of_range">Offset out of range</string>
+</resources>

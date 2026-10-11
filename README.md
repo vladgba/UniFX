@@ -44,6 +44,14 @@ Used automatically for files over 1 MB, binary files and files you can't write t
 - Go to offset (hex or decimal), find hex bytes or text, find next, write text at the cursor
 - Status bar with the value under the cursor as u8/i8, binary, u16/i16 and u32/i32 (little-endian)
 
+### Opening files from other apps
+UniFX appears in other apps' *Open with* and *Share* lists as **UniFX Editor** (text-like files) and **UniFX Hex** (any file). It handles `ACTION_VIEW`, `ACTION_EDIT` and `ACTION_SEND`.
+- If the link resolves to a real file (a `file://` path, the system storage and Downloads providers, or a provider that exposes the file path), that file is opened directly
+- Otherwise the content is copied into the app cache and the copy is opened. If the sending app granted write access, every save is also written back to the original; otherwise the copy is read-only and opens in the viewer
+- Shared plain text (no file attached) opens as a read-only text copy
+- Paths inside UniFX's own private data folder are never opened this way
+- Copies older than a day are cleaned up automatically
+
 ## Building
 
 Requirements: JDK 17+ and the Android SDK (platform 35).
@@ -77,7 +85,8 @@ app/src/main/java/x/vladgba/fileman/
 ├── FileOps.kt           copy / move / delete / unique names / atomic write (background thread)
 ├── Storage.kt           storage roots and permission handling
 ├── FilesProvider.kt     minimal content:// provider for sharing and "open with"
-├── Openers.kt           module registry (see below)
+├── Openers.kt           module registry (see below), write-back for files opened from other apps
+├── OpenActivity.kt      entry point for VIEW / EDIT / SEND intents from other apps
 ├── EditorActivity.kt    text editor screen, undo/redo history
 ├── CodeEditText.kt      EditText with gutter, unprintable markers and kinetic scrolling
 ├── Highlighter.kt       async line-by-line highlighter for the editor

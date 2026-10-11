@@ -24,6 +24,7 @@
 
         <activity
             android:name=".MainActivity"
+            android:theme="@style/AppTheme.NoBar"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="true">
             <intent-filter>
@@ -49,6 +50,82 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="false"
             android:windowSoftInputMode="adjustResize|stateHidden" />
+
+        <!-- Entry point for other apps (VIEW / EDIT / SEND with file:// or content://). No UI of its own. -->
+        <activity
+            android:name=".OpenActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/AppTheme.Translucent" />
+
+        <!-- "UniFX Editor" in other apps' Open with / Share lists: text-like files. -->
+        <activity-alias
+            android:name=".OpenText"
+            android:exported="true"
+            android:label="@string/open_as_text"
+            android:targetActivity=".OpenActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="application/javascript" />
+                <data android:mimeType="application/x-javascript" />
+                <data android:mimeType="application/x-sh" />
+                <data android:mimeType="application/x-shellscript" />
+                <data android:mimeType="application/x-yaml" />
+                <data android:mimeType="application/yaml" />
+                <data android:mimeType="application/toml" />
+                <data android:mimeType="application/sql" />
+                <data android:mimeType="application/x-httpd-php" />
+                <data android:mimeType="application/x-python-code" />
+                <data android:mimeType="application/x-subrip" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="application/javascript" />
+                <data android:mimeType="application/x-javascript" />
+                <data android:mimeType="application/x-sh" />
+                <data android:mimeType="application/x-shellscript" />
+                <data android:mimeType="application/x-yaml" />
+                <data android:mimeType="application/yaml" />
+                <data android:mimeType="application/toml" />
+                <data android:mimeType="application/sql" />
+                <data android:mimeType="application/x-httpd-php" />
+                <data android:mimeType="application/x-python-code" />
+                <data android:mimeType="application/x-subrip" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- "UniFX Hex" in other apps' Open with / Share lists: any file. -->
+        <activity-alias
+            android:name=".OpenHex"
+            android:exported="true"
+            android:label="@string/open_as_hex"
+            android:targetActivity=".OpenActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity-alias>
 
         <provider
             android:name=".FilesProvider"

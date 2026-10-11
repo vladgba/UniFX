@@ -5,6 +5,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Shared versioning (version.properties) + release signing, see gradle/android-common.gradle
+apply(from = rootProject.file("gradle/android-common.gradle"))
+
 android {
     namespace = "x.vladgba.fileman"
     compileSdk = 35
@@ -13,8 +16,6 @@ android {
         applicationId = "x.vladgba.fileman"
         minSdk = 21
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
     }
 
     buildTypes {
@@ -22,9 +23,6 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key so the release APK installs out of the box.
-            // Swap in your own signingConfig before publishing.
-            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

@@ -70,6 +70,7 @@ class EditorActivity : Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         file = File(intent.getStringExtra(Openers.EXTRA_PATH) ?: run { finish(); return })
+        Openers.adoptTarget(this, file)
         prefs = getSharedPreferences("unifx", MODE_PRIVATE)
         fontSp = prefs.getFloat("ed_font", 14f)
         wrap = prefs.getBoolean("ed_wrap", false)
@@ -313,7 +314,8 @@ class EditorActivity : Activity() {
         if (!loaded) return
         val bytes = encode()
         Thread {
-            val ok = FileOps.writeAtomic(file, bytes)
+            // Cached copy of another app's file: also write back to the original URI.
+            val ok = FileOps.writeAtomic(file, bytes) && Openers.writeBack(this, file)
             ui.post {
                 if (ok) { dirty = false; toast(R.string.saved); then?.invoke() } else toast(R.string.failed)
             }

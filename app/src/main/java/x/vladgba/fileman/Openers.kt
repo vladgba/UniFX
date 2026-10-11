@@ -3,8 +3,11 @@ package x.vladgba.fileman
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Process
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import java.io.File
@@ -44,7 +47,50 @@ object Openers {
     }
 
     fun launch(a: Activity, cls: Class<out Activity>, f: File) {
-        a.startActivity(Intent(a, cls).putExtra(EXTRA_PATH, f.absolutePath))
+        val i = Intent(a, cls).putExtra(EXTRA_PATH, f.absolutePath)
+        // Carry the write-back target (and our grant on it) along when switching editor ↔ viewer ↔ hex.
+        target(f)?.let { uri ->
+            i.data = uri
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (canWrite(a, uri)) i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        a.startActivity(i)
+    }
+
+    // ---------------------------------------------------------------- files opened from other apps
+    //
+    // A content:// URI that can't be resolved to a real path is copied into the cache and the copy is edited.
+    // If the sender granted write access, the copy is registered here and every save is written back.
+
+    private val targets = HashMap<String, Uri>()
+
+    /** Write-back URI for a cached copy, or null for ordinary files. */
+    fun target(f: File): Uri? = synchronized(targets) { targets[f.absolutePath] }
+
+    fun setTarget(f: File, uri: Uri) = synchronized(targets) { targets[f.absolutePath] = uri }
+
+    /** Re-register a target passed in an activity's intent (survives process death with the task). */
+    fun adoptTarget(a: Activity, f: File) {
+        val uri = a.intent.data ?: return
+        if (uri.scheme == "content" && canWrite(a, uri)) setTarget(f, uri)
+    }
+
+    fun canWrite(ctx: Context, uri: Uri): Boolean =
+        ctx.checkUriPermission(uri, Process.myPid(), Process.myUid(), Intent.FLAG_GRANT_WRITE_URI_PERMISSION) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /** Copy [f] back to its target URI. True if there is no target or the copy succeeded. Blocking. */
+    fun writeBack(ctx: Context, f: File): Boolean {
+        val uri = target(f) ?: return true
+        return try {
+            val out = try { ctx.contentResolver.openOutputStream(uri, "wt") } catch (e: Exception) { null }
+                ?: ctx.contentResolver.openOutputStream(uri, "w")
+                ?: return false
+            out.use { o -> f.inputStream().use { it.copyTo(o, 64 * 1024) } }
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /** Returns false if no app can handle the file. */

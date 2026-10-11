@@ -166,6 +166,7 @@ class HexActivity : Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         val f = File(intent.getStringExtra(Openers.EXTRA_PATH) ?: run { finish(); return })
+        Openers.adoptTarget(this, f)
         doc = try { HexDoc(f) } catch (e: IOException) {
             Toast.makeText(this, R.string.cannot_open, Toast.LENGTH_SHORT).show(); finish(); return
         }
@@ -418,6 +419,8 @@ class HexActivity : Activity() {
     private fun save(then: (() -> Unit)? = null) {
         try {
             doc.save()
+            // Cached copy of another app's file: also write back to the original URI.
+            if (!Openers.writeBack(this, doc.file)) throw IOException("write-back failed")
             undo.clear()
             toast(R.string.saved)
             updateTitle()

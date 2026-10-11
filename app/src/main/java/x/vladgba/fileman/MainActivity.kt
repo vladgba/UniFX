@@ -3,27 +3,33 @@ package x.vladgba.fileman
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.SharedPreferences
+import android.graphics.Color
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextUtils
+import android.text.TextWatcher
 import android.text.format.Formatter
-import android.view.ActionMode
+import android.util.TypedValue
 import android.view.Gravity
-import android.view.Menu
-import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.WindowInsets
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.widget.AbsListView
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridView
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.ProgressBar
-import android.widget.SearchView
 import android.widget.TextView
 import android.widget.Toast
 import java.io.File
@@ -50,8 +56,17 @@ class MainActivity : Activity() {
     private var loadToken = 0
     private var busyCount = 0
     private var shownDir: File? = null
-    private var actionMode: ActionMode? = null
-    private var searchItem: MenuItem? = null
+    private var selecting = false
+    private lateinit var normalIcons: LinearLayout
+    private lateinit var selectIcons: LinearLayout
+    private val selButtons = HashMap<Int, ImageView>()
+    private lateinit var titleView: TextView
+    private lateinit var infoView: TextView
+    private lateinit var pasteButton: ImageView
+    private lateinit var viewButton: ImageView
+    private lateinit var hiddenButton: ImageView
+    private lateinit var searchRow: LinearLayout
+    private lateinit var searchInput: EditText
 
     private var roots: List<Storage.Root> = emptyList()
     private var cwd: File = File("/")
@@ -72,8 +87,10 @@ class MainActivity : Activity() {
         showHidden = prefs.getBoolean("hidden", false)
         gridMode = prefs.getBoolean("grid", false)
         adapter = FileAdapter(this)
+        adapter.isChecked = { pos -> selecting && list.isItemChecked(pos) }
         setContentView(buildUi())
         applyViewMode()
+        refreshBar()
         roots = Storage.roots(this)
         val start = state?.getString("cwd") ?: prefs.getString("cwd", null)
         cwd = start?.let(::File)?.takeIf { it.isDirectory } ?: Storage.primary()
@@ -110,6 +127,8 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (selecting) { finishSelection(); return }
+        if (searchRow.visibility == View.VISIBLE) { closeSearch(); return }
         val parent = cwd.parentFile
         if (parent != null && roots.none { it.dir == cwd }) navigate(parent) else super.onBackPressed()
     }
@@ -132,7 +151,7 @@ class MainActivity : Activity() {
         crumbs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), 0, dp(8), 0)
+            setPadding(dp(4), 0, dp(4), 0)
         }
         crumbScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -150,13 +169,23 @@ class MainActivity : Activity() {
         list = GridView(this).apply {
             isFastScrollEnabled = true
             clipToPadding = false
-            choiceMode = AbsListView.CHOICE_MODE_MULTIPLE_MODAL
+            choiceMode = AbsListView.CHOICE_MODE_NONE
             this.adapter = this@MainActivity.adapter
             setOnItemClickListener { _, _, pos, _ ->
+                if (selecting) {
+                    // CHOICE_MODE_MULTIPLE already toggled the item.
+                    if (list.checkedItemCount == 0) finishSelection() else onSelectionChanged()
+                    return@setOnItemClickListener
+                }
                 val e = this@MainActivity.adapter.getItem(pos)
                 if (e.isDir) navigate(e.file) else Openers.open(this@MainActivity, e.file)
             }
-            setMultiChoiceModeListener(selectionCallback)
+            setOnItemLongClickListener { _, _, pos, _ ->
+                if (!selecting) startSelection()
+                list.setItemChecked(pos, !list.isItemChecked(pos))
+                if (list.checkedItemCount == 0) finishSelection() else onSelectionChanged()
+                true
+            }
         }
         val frame = FrameLayout(this).apply {
             addView(list, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -166,18 +195,203 @@ class MainActivity : Activity() {
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            addView(buildTopLine(), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(banner, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-            addView(crumbScroll, LinearLayout.LayoutParams(MATCH_PARENT, dp(44)))
-            addView(progress, LinearLayout.LayoutParams(MATCH_PARENT, dp(4)))
             addView(frame, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
-            Ui.applyInsets(this)
+            addView(progress, LinearLayout.LayoutParams(MATCH_PARENT, dp(4)))
+            addView(buildBottomBar(), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            // Edge-to-edge: keep clear of the status bar on top and the navigation bar / keyboard below.
+            setOnApplyWindowInsetsListener { v, insets ->
+                val top = Ui.topInset(insets)
+                if (Build.VERSION.SDK_INT >= 30) {
+                    val i = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
+                    v.setPadding(i.left, top, i.right, i.bottom)
+                } else {
+                    @Suppress("DEPRECATION")
+                    v.setPadding(insets.systemWindowInsetLeft, top, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
+                }
+                insets
+            }
         }
+    }
+
+    // ---------------------------------------------------------------- top line + bottom bar
+    //
+    //   [ Docs · 12 items · 3 to paste                       ]   slim line at the top
+    //   [ Internal › Download › Docs                         ]   breadcrumb
+    //   ...list...
+    //   [ search field (when open)                     ✕ ]
+    //   [ 🔍  📁+  📄+  ⇅  ▦  👁  💾  ⟳  📋              ]   every action is an icon, within thumb reach
+
+    private fun primaryColor() = TypedValue().also { theme.resolveAttribute(android.R.attr.colorPrimary, it, true) }.data
+
+    private fun buildTopLine(): View {
+        titleView = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTypeface(typeface, Typeface.BOLD)
+            setSingleLine()
+            ellipsize = TextUtils.TruncateAt.MIDDLE
+        }
+        infoView = TextView(this).apply {
+            setTextColor(0xB3FFFFFF.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setSingleLine()
+            setPadding(dp(8), 0, 0, 0)
+        }
+        val line = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(4), dp(12), dp(2))
+            addView(titleView, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, 0f))
+            addView(infoView, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(primaryColor())
+            addView(line, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            addView(crumbScroll, LinearLayout.LayoutParams(MATCH_PARENT, dp(32)))
+        }
+    }
+
+    private fun buildBottomBar(): View {
+        searchInput = EditText(this).apply {
+            setSingleLine()
+            setHint(R.string.search)
+            setTextColor(Color.WHITE)
+            setHintTextColor(0x99FFFFFF.toInt())
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: Editable) {
+                    finishSelection()
+                    adapter.filter(s.toString())
+                }
+            })
+        }
+        searchRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            setPadding(dp(8), 0, 0, 0)
+            addView(searchInput, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(barIcon(R.drawable.ic_close, R.string.close) { closeSearch() }, LinearLayout.LayoutParams(dp(44), dp(44)))
+        }
+        pasteButton = barIcon(R.drawable.ic_paste, R.string.paste_short) { paste() }.apply { visibility = View.GONE }
+        viewButton = barIcon(R.drawable.ic_view_grid, R.string.view_grid) { onMenuItem(M_VIEW) }
+        hiddenButton = barIcon(R.drawable.ic_hidden, R.string.show_hidden) { onMenuItem(M_HIDDEN) }
+        normalIcons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            listOf(
+                barIcon(R.drawable.ic_find, R.string.search) { openSearch() },
+                barIcon(R.drawable.ic_new_folder, R.string.new_folder) { onMenuItem(M_NEW_DIR) },
+                barIcon(R.drawable.ic_new_file, R.string.new_file) { onMenuItem(M_NEW_FILE) },
+                barIcon(R.drawable.ic_sort, R.string.sort) { showSortMenu(it) },
+                viewButton,
+                hiddenButton,
+                barIcon(R.drawable.ic_storage, R.string.storage) { showStorageMenu(it) },
+                barIcon(R.drawable.ic_refresh, R.string.refresh) { onMenuItem(M_REFRESH) },
+                pasteButton,
+            ).forEach { addView(it, LinearLayout.LayoutParams(0, dp(48), 1f)) }
+        }
+        // Selection actions replace the normal icons while items are selected (no top action bar).
+        selectIcons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+            listOf(
+                Triple(A_CLOSE, R.drawable.ic_close, R.string.close),
+                Triple(A_COPY, R.drawable.ic_copy, R.string.copy),
+                Triple(A_CUT, R.drawable.ic_cut, R.string.cut),
+                Triple(A_DELETE, R.drawable.ic_delete, R.string.delete),
+                Triple(A_SHARE, R.drawable.ic_share, R.string.share),
+                Triple(A_ALL, R.drawable.ic_select_all, R.string.select_all),
+                Triple(A_RENAME, R.drawable.ic_rename, R.string.rename),
+                Triple(A_OPEN_WITH, R.drawable.ic_open_with, R.string.open_with),
+                Triple(A_INFO, R.drawable.ic_info, R.string.properties),
+            ).forEach { (id, icon, label) ->
+                val b = barIcon(icon, label) { onSelectionAction(id) }
+                selButtons[id] = b
+                addView(b, LinearLayout.LayoutParams(0, dp(48), 1f))
+            }
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(primaryColor())
+            addView(searchRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            addView(normalIcons, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            addView(selectIcons, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        }
+    }
+
+    private fun barIcon(icon: Int, label: Int, onClick: (View) -> Unit) = ImageView(this).apply {
+        setImageResource(icon)
+        scaleType = ImageView.ScaleType.CENTER
+        setBackgroundResource(attrRes(android.R.attr.selectableItemBackgroundBorderless))
+        contentDescription = getString(label)
+        setOnClickListener { onClick(it) }
+        setOnLongClickListener { toast(contentDescription); true }
+    }
+
+    private fun openSearch() {
+        searchRow.visibility = View.VISIBLE
+        searchInput.requestFocus()
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(searchInput, 0)
+    }
+
+    private fun closeSearch() {
+        if (searchRow.visibility != View.VISIBLE) return
+        searchInput.setText("") // also clears the filter
+        searchRow.visibility = View.GONE
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(searchInput.windowToken, 0)
+    }
+
+    /** Icon states: paste only with something to paste, view/hidden show their current setting. */
+    private fun refreshBar() {
+        if (!::pasteButton.isInitialized) return
+        pasteButton.visibility = if (clip.isEmpty()) View.GONE else View.VISIBLE
+        pasteButton.contentDescription = getString(R.string.paste, clip.size)
+        // The view icon shows the mode you switch *to*.
+        viewButton.setImageResource(if (gridMode) R.drawable.ic_view_list else R.drawable.ic_view_grid)
+        viewButton.contentDescription = getString(if (gridMode) R.string.view_list else R.string.view_grid)
+        hiddenButton.imageAlpha = if (showHidden) 255 else 110
+        updateInfo()
+    }
+
+    private var itemCount: Int? = null
+
+    private fun updateInfo() {
+        val parts = ArrayList<String>()
+        itemCount?.let { parts += getString(R.string.items, it) }
+        if (clip.isNotEmpty()) parts += getString(R.string.to_paste, clip.size)
+        infoView.text = parts.joinToString(" · ")
+    }
+
+    private fun showSortMenu(anchor: View) {
+        val p = PopupMenu(this, anchor)
+        p.menu.apply {
+            add(1, M_SORT_NAME, 0, R.string.sort_name)
+            add(1, M_SORT_SIZE, 1, R.string.sort_size)
+            add(1, M_SORT_DATE, 2, R.string.sort_date)
+            add(1, M_SORT_TYPE, 3, R.string.sort_type)
+            setGroupCheckable(1, true, true)
+            findItem(M_SORT_NAME + sortMode).isChecked = true
+            add(2, M_DESC, 4, R.string.descending).apply { isCheckable = true; isChecked = sortDesc }
+        }
+        p.setOnMenuItemClickListener { onMenuItem(it.itemId) }
+        p.show()
+    }
+
+    private fun showStorageMenu(anchor: View) {
+        val p = PopupMenu(this, anchor)
+        roots.forEachIndexed { i, r -> p.menu.add(0, M_ROOT_BASE + i, i, r.label) }
+        p.setOnMenuItemClickListener { onMenuItem(it.itemId) }
+        p.show()
     }
 
     /** One GridView serves both modes: a single stretched column is the list, auto-fit tiles are the grid. */
     private fun applyViewMode() {
         val pos = list.firstVisiblePosition
-        actionMode?.finish()
+        finishSelection()
         if (gridMode) {
             list.numColumns = GridView.AUTO_FIT
             list.columnWidth = dp(104)
@@ -208,16 +422,18 @@ class MainActivity : Activity() {
         chain.reverse()
         crumbs.removeAllViews()
         chain.forEachIndexed { i, (label, dir) ->
-            if (i > 0) crumbs.addView(TextView(this).apply { text = "›"; alpha = 0.5f })
+            if (i > 0) crumbs.addView(TextView(this).apply { text = "›"; setTextColor(Color.WHITE); alpha = 0.5f })
             crumbs.addView(TextView(this).apply {
                 text = label
-                setPadding(dp(8), dp(10), dp(8), dp(10))
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setPadding(dp(6), dp(6), dp(6), dp(6))
                 setBackgroundResource(attrRes(android.R.attr.selectableItemBackground))
                 if (i == chain.lastIndex) setTypeface(typeface, Typeface.BOLD)
                 setOnClickListener { if (dir != cwd) navigate(dir) }
             })
         }
-        actionBar?.title = chain.last().first
+        titleView.text = chain.last().first
         crumbScroll.post { crumbScroll.fullScroll(View.FOCUS_RIGHT) }
     }
 
@@ -233,8 +449,8 @@ class MainActivity : Activity() {
 
     private fun navigate(dir: File) {
         scrollMemory[cwd.path] = list.firstVisiblePosition
-        actionMode?.finish()
-        searchItem?.collapseActionView()
+        finishSelection()
+        closeSearch()
         cwd = dir
         load()
     }
@@ -255,11 +471,12 @@ class MainActivity : Activity() {
                 busy(false)
                 if (token != loadToken || isFinishing) return@post
                 val pos = scrollMemory.remove(dir.path) ?: if (shownDir == dir) list.firstVisiblePosition else 0
-                actionMode?.finish()
+                finishSelection()
                 adapter.setData(entries ?: emptyList())
                 shownDir = dir
                 emptyView.setText(if (entries == null) R.string.cannot_read else R.string.empty)
-                actionBar?.subtitle = if (entries == null) null else getString(R.string.items, entries.size)
+                itemCount = entries?.size
+                updateInfo()
                 list.setSelection(pos)
             }
         }
@@ -279,61 +496,7 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- options menu
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        searchItem = menu.add(0, M_SEARCH, 0, R.string.search).apply {
-            setIcon(android.R.drawable.ic_menu_search)
-            setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM or MenuItem.SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW)
-            actionView = SearchView(this@MainActivity).apply {
-                setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-                    override fun onQueryTextSubmit(q: String) = false
-                    override fun onQueryTextChange(q: String): Boolean {
-                        actionMode?.finish()
-                        adapter.filter(q)
-                        return true
-                    }
-                })
-            }
-            setOnActionExpandListener(object : MenuItem.OnActionExpandListener {
-                override fun onMenuItemActionExpand(item: MenuItem) = true
-                override fun onMenuItemActionCollapse(item: MenuItem): Boolean { adapter.filter(""); return true }
-            })
-        }
-        menu.add(0, M_PASTE, 1, "").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM or MenuItem.SHOW_AS_ACTION_WITH_TEXT)
-        menu.add(0, M_NEW_DIR, 2, R.string.new_folder)
-        menu.add(0, M_NEW_FILE, 3, R.string.new_file)
-        menu.addSubMenu(0, M_SORT, 4, R.string.sort).apply {
-            add(1, M_SORT_NAME, 0, R.string.sort_name)
-            add(1, M_SORT_SIZE, 1, R.string.sort_size)
-            add(1, M_SORT_DATE, 2, R.string.sort_date)
-            add(1, M_SORT_TYPE, 3, R.string.sort_type)
-            setGroupCheckable(1, true, true)
-            add(2, M_DESC, 4, R.string.descending).isCheckable = true
-        }
-        menu.add(0, M_VIEW, 5, "")
-        menu.add(0, M_HIDDEN, 5, R.string.show_hidden).isCheckable = true
-        menu.addSubMenu(0, M_STORAGE, 6, R.string.storage)
-        menu.add(0, M_REFRESH, 7, R.string.refresh)
-        return true
-    }
-
-    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        menu.findItem(M_PASTE).apply {
-            isVisible = clip.isNotEmpty()
-            title = getString(R.string.paste, clip.size)
-        }
-        menu.findItem(M_SORT_NAME + sortMode).isChecked = true
-        menu.findItem(M_DESC).isChecked = sortDesc
-        menu.findItem(M_HIDDEN).isChecked = showHidden
-        menu.findItem(M_VIEW).setTitle(if (gridMode) R.string.view_list else R.string.view_grid)
-        menu.findItem(M_STORAGE).subMenu?.apply {
-            clear()
-            roots.forEachIndexed { i, r -> add(0, M_ROOT_BASE + i, i, r.label) }
-        }
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        val id = item.itemId
+    private fun onMenuItem(id: Int): Boolean {
         when {
             id == M_PASTE -> paste()
             id == M_NEW_DIR -> prompt(R.string.new_folder, "") { name ->
@@ -355,11 +518,12 @@ class MainActivity : Activity() {
                 gridMode = !gridMode
                 prefs.edit().putBoolean("grid", gridMode).apply()
                 applyViewMode()
+                refreshBar()
             }
-            id == M_HIDDEN -> { showHidden = !showHidden; savePrefs(); load() }
+            id == M_HIDDEN -> { showHidden = !showHidden; savePrefs(); refreshBar(); load() }
             id == M_REFRESH -> load()
             id >= M_ROOT_BASE -> roots.getOrNull(id - M_ROOT_BASE)?.let { navigate(it.dir) }
-            else -> return super.onOptionsItemSelected(item)
+            else -> return false // submenu headers: let the popup open the submenu
         }
         return true
     }
@@ -375,61 +539,64 @@ class MainActivity : Activity() {
         return (0 until c.size()).filter { c.valueAt(it) }.map { adapter.getItem(c.keyAt(it)) }
     }
 
-    private val selectionCallback = object : AbsListView.MultiChoiceModeListener {
-        override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-            actionMode = mode
-            menu.add(0, A_COPY, 0, R.string.copy).setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
-            menu.add(0, A_CUT, 1, R.string.cut).setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
-            menu.add(0, A_DELETE, 2, R.string.delete).setIcon(android.R.drawable.ic_menu_delete)
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
-            menu.add(0, A_ALL, 3, R.string.select_all)
-            menu.add(0, A_RENAME, 4, R.string.rename)
-            menu.add(0, A_SHARE, 5, R.string.share)
-            menu.add(0, A_OPEN_WITH, 6, R.string.open_with)
-            menu.add(0, A_INFO, 7, R.string.properties)
-            return true
-        }
+    private fun startSelection() {
+        selecting = true
+        list.choiceMode = AbsListView.CHOICE_MODE_MULTIPLE
+        normalIcons.visibility = View.GONE
+        selectIcons.visibility = View.VISIBLE
+    }
 
-        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
-            val sel = selected()
-            val one = sel.size == 1
-            menu.findItem(A_RENAME).isVisible = one
-            menu.findItem(A_INFO).isVisible = one
-            menu.findItem(A_OPEN_WITH).isVisible = one && !sel[0].isDir
-            menu.findItem(A_SHARE).isVisible = sel.isNotEmpty() && sel.none { it.isDir }
-            return true
-        }
+    private fun finishSelection() {
+        if (!selecting) return
+        selecting = false
+        list.clearChoices()
+        list.choiceMode = AbsListView.CHOICE_MODE_NONE
+        // With choice mode off the list no longer updates the highlight, so clear it on visible rows
+        // ourselves; recycled rows are reset by the adapter (isChecked) when they're rebound.
+        for (i in 0 until list.childCount) list.getChildAt(i).isActivated = false
+        list.invalidateViews()
+        selectIcons.visibility = View.GONE
+        normalIcons.visibility = View.VISIBLE
+        renderCrumbs() // restores the folder title
+        updateInfo()
+    }
 
-        override fun onItemCheckedStateChanged(mode: ActionMode, pos: Int, id: Long, checked: Boolean) {
-            mode.title = list.checkedItemCount.toString()
-            mode.invalidate()
-        }
+    /** Top line shows the count; actions that need exactly one item / no folders hide otherwise. */
+    private fun onSelectionChanged() {
+        val sel = selected()
+        val one = sel.size == 1
+        titleView.text = getString(R.string.selected_count, sel.size)
+        val bytes = sel.filter { !it.isDir }.sumOf { it.size }
+        infoView.text = if (bytes > 0) Formatter.formatShortFileSize(this, bytes) else ""
+        fun show(id: Int, v: Boolean) { selButtons[id]?.visibility = if (v) View.VISIBLE else View.GONE }
+        show(A_RENAME, one)
+        show(A_INFO, one)
+        show(A_OPEN_WITH, one && !sel[0].isDir)
+        show(A_SHARE, sel.isNotEmpty() && sel.none { it.isDir })
+    }
 
-        override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
-            val sel = selected()
-            if (item.itemId == A_ALL) {
-                for (i in 0 until adapter.count) list.setItemChecked(i, true)
-                return true
+    private fun onSelectionAction(id: Int) {
+        if (id == A_ALL) {
+            for (i in 0 until adapter.count) list.setItemChecked(i, true)
+            onSelectionChanged()
+            return
+        }
+        val sel = selected()
+        finishSelection()
+        if (sel.isEmpty() || id == A_CLOSE) return
+        when (id) {
+            A_COPY, A_CUT -> {
+                clip = sel.map { it.file }
+                clipMove = id == A_CUT
+                toast(getString(R.string.copied, clip.size))
+                refreshBar()
             }
-            mode.finish()
-            if (sel.isEmpty()) return true
-            when (item.itemId) {
-                A_COPY, A_CUT -> {
-                    clip = sel.map { it.file }
-                    clipMove = item.itemId == A_CUT
-                    toast(getString(R.string.copied, clip.size))
-                    invalidateOptionsMenu()
-                }
-                A_DELETE -> confirmDelete(sel.map { it.file })
-                A_RENAME -> rename(sel[0].file)
-                A_SHARE -> Openers.share(this@MainActivity, sel.map { it.file })
-                A_OPEN_WITH -> Openers.chooser(this@MainActivity, sel[0].file)
-                A_INFO -> showInfo(sel[0].file)
-            }
-            return true
+            A_DELETE -> confirmDelete(sel.map { it.file })
+            A_RENAME -> rename(sel[0].file)
+            A_SHARE -> Openers.share(this, sel.map { it.file })
+            A_OPEN_WITH -> Openers.chooser(this, sel[0].file)
+            A_INFO -> showInfo(sel[0].file)
         }
-
-        override fun onDestroyActionMode(mode: ActionMode) { actionMode = null }
     }
 
     // ---------------------------------------------------------------- file actions
@@ -473,7 +640,7 @@ class MainActivity : Activity() {
             .setMessage(getString(R.string.delete_confirm, files.size))
             .setPositiveButton(R.string.delete) { _, _ ->
                 clip = clip - files.toSet()
-                invalidateOptionsMenu()
+                refreshBar()
                 runOp { FileOps.deleteAll(files) }
             }
             .setNegativeButton(android.R.string.cancel, null)
@@ -488,7 +655,7 @@ class MainActivity : Activity() {
             toast(R.string.into_itself)
             return
         }
-        if (move) { clip = emptyList(); invalidateOptionsMenu() }
+        if (move) { clip = emptyList(); refreshBar() }
         runOp { FileOps.transfer(src, dest, move) }
     }
 
@@ -562,5 +729,6 @@ class MainActivity : Activity() {
         const val A_SHARE = 6
         const val A_OPEN_WITH = 7
         const val A_INFO = 8
+        const val A_CLOSE = 9
     }
 }

@@ -275,6 +275,13 @@ class EditorActivity : Activity() {
         var text = decode(bytes)
         crlf = text.contains("\r\n")
         if (crlf) text = text.replace("\r\n", "\n")
+        // A very long line laid out unwrapped is one huge run of text that EditText measures and draws
+        // as a whole; wrapping splits it into short visual lines. Session-only: the saved setting is kept.
+        if (!wrap && longestLine(text) > Highlighter.MAX_COLORED_LINE) {
+            wrap = true
+            edit.setWrap(true)
+            toast(R.string.long_lines_wrapped)
+        }
         edit.setText(text)
         edit.isEnabled = true
         edit.setSelection(0)
@@ -285,6 +292,19 @@ class EditorActivity : Activity() {
         updateTitle()
         refreshHeader()
         edit.post { highlighter?.schedule(0) }
+    }
+
+    private fun longestLine(t: String): Int {
+        var best = 0
+        var start = 0
+        while (start <= t.length) {
+            val nl = t.indexOf('\n', start)
+            val end = if (nl < 0) t.length else nl
+            if (end - start > best) best = end - start
+            if (nl < 0) break
+            start = nl + 1
+        }
+        return best
     }
 
     /** UTF-8 when the bytes are valid UTF-8, otherwise Latin-1 (which round-trips any byte unchanged). */

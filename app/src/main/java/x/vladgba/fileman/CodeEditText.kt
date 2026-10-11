@@ -125,6 +125,7 @@ class CodeEditText(ctx: Context) : EditText(ctx) {
     private var selectionAtDown = false
     private var dragAxis = 0 // 0 = not dragging (EditText owns the touch), 1 = vertical, 2 = horizontal
     private var swallow = false
+    private var gestureMaxX = 0 // horizontal limit measured once per drag (measuring long lines is O(length))
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         val action = e.actionMasked
@@ -152,6 +153,7 @@ class CodeEditText(ctx: Context) : EditText(ctx) {
             val selecting = !selectionAtDown && hasSelection()
             if (!selecting && (dx > touchSlop || dy > touchSlop)) {
                 dragAxis = if (hScroll && dx > dy) 2 else 1
+                gestureMaxX = if (dragAxis == 2) maxScrollX() else scrollX
                 lastX = e.x; lastY = e.y
                 val cancel = MotionEvent.obtain(e).apply { setAction(MotionEvent.ACTION_CANCEL) }
                 super.onTouchEvent(cancel)
@@ -208,14 +210,14 @@ class CodeEditText(ctx: Context) : EditText(ctx) {
     }
 
     private fun scrollClamped(dx: Int, dy: Int) {
-        val x = (scrollX + dx).coerceIn(0, maxScrollX())
+        val x = (scrollX + dx).coerceIn(0, max(gestureMaxX, 0))
         val y = (scrollY + dy).coerceIn(0, maxScrollY())
         if (x != scrollX || y != scrollY) scrollTo(x, y)
     }
 
     private fun fling(velocity: Int) {
         if (dragAxis == 1) flinger.fling(scrollX, scrollY, 0, velocity, scrollX, scrollX, 0, maxScrollY())
-        else flinger.fling(scrollX, scrollY, velocity, 0, 0, maxScrollX(), scrollY, scrollY)
+        else flinger.fling(scrollX, scrollY, velocity, 0, 0, gestureMaxX, scrollY, scrollY)
         postInvalidateOnAnimation()
     }
 
@@ -276,7 +278,7 @@ class CodeEditText(ctx: Context) : EditText(ctx) {
         for (i in first..last) {
             val s = l.getLineStart(i)
             val e = l.getLineEnd(i)
-            if (e - s > 4000) continue // very long line: skip, getPrimaryHorizontal is O(line)
+            if (e - s > 1000) continue // very long line: skip, getPrimaryHorizontal is O(line)
             val y = (l.getLineBaseline(i) + top).toFloat()
             for (k in s until e) {
                 val sym = symbol(t[k])

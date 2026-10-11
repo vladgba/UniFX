@@ -5,6 +5,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
@@ -17,14 +20,18 @@ import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.util.LruCache
 import android.util.TypedValue
+import android.view.ActionMode
 import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.widget.AbsListView
 import android.widget.BaseAdapter
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
@@ -255,6 +262,7 @@ class ViewerActivity : Activity() {
     private val ui = Handler(Looper.getMainLooper())
     private val infoCache = LruCache<Int, LineIndex.RowInfo>(512)
     private val textCache = LruCache<Int, CharSequence>(256)
+    private val offsetsCache = LruCache<Int, IntArray>(256)
     private var _count = 0
     private var binary = false
     private var lang: Lang? = null
@@ -276,6 +284,7 @@ class ViewerActivity : Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         file = File(intent.getStringExtra(Openers.EXTRA_PATH) ?: run { finish(); return })
+        Openers.adoptTarget(this, file)
         src = try { ByteSource(file) } catch (e: IOException) {
             Toast.makeText(this, R.string.cannot_open, Toast.LENGTH_SHORT).show(); finish(); return
         }
@@ -298,11 +307,29 @@ class ViewerActivity : Activity() {
             divider = null
             dividerHeight = 0
             isFastScrollEnabled = true
-            setOnItemLongClickListener { _, _, pos, _ -> copyRow(pos); true }
+            setOnTouchListener { _, e -> if (e.actionMasked == MotionEvent.ACTION_DOWN) { downX = e.x; downY = e.y }; false }
+            setOnItemLongClickListener { _, view, _, _ ->
+                (view as? RowView)?.let { startSelection(it, downX - it.left, downY - it.top) }
+                true
+            }
+            setOnItemClickListener { _, _, _, _ -> selMode?.finish() }
+            setOnScrollListener(object : AbsListView.OnScrollListener {
+                override fun onScrollStateChanged(view: AbsListView, state: Int) {}
+                override fun onScroll(view: AbsListView, first: Int, visible: Int, total: Int) {
+                    if (selActive) placeHandles()
+                }
+            })
+        }
+        startHandle = Handle(this, true)
+        endHandle = Handle(this, false)
+        val frame = FrameLayout(this).apply {
+            addView(list, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            addView(startHandle, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+            addView(endHandle, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(list, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+            addView(frame, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             Ui.applyInsets(this)
         })
 
@@ -366,10 +393,10 @@ class ViewerActivity : Activity() {
         if (hasNewline) end--
         if (!inv && end > info.start && src.byteAt(end - 1) == '\r'.code) end--
         val bytes = src.read(info.start, end)
-        // Lenient UTF-8, one char per decoded char so search-hit offsets still line up.
-        // Unprintables become dim markers: control pictures (␀ ␍ …), · for spaces, → for tabs, ¶ at line end
-        // when "show unprintable" is on; otherwise only control/undecodable bytes become a dim middle dot.
-        val decoded = String(bytes, Charsets.UTF_8)
+        // Lenient UTF-8 that records each char's byte offset (for selection, copy and search hits).
+        // Unprintables become dim markers, one char each: control pictures (␀ ␍ …), · for spaces, → for tabs,
+        // ¶ at line end when "show unprintable" is on; otherwise only control/undecodable bytes become a dim ·.
+        val (decoded, decodedOffs) = decodeRow(bytes)
         val out = StringBuilder(decoded.length + 1)
         val marks = Ints()
         for (c in decoded) {
@@ -384,14 +411,21 @@ class ViewerActivity : Activity() {
             }
             if (m.code != 0) { marks.add(out.length); out.append(m) } else out.append(c)
         }
-        if (inv && hasNewline) { marks.add(out.length); out.append('\u00B6') }
+        val offs: IntArray
+        if (inv && hasNewline) {
+            marks.add(out.length); out.append('\u00B6')
+            offs = decodedOffs.copyOf(decodedOffs.size + 1).also { it[it.size - 1] = (info.end - info.start).toInt() }
+        } else {
+            offs = decodedOffs
+        }
+        offsetsCache.put(r, offs)
         val plain = out.toString()
         val hit = hitOff
         val query = lastQuery
         val l = lang
         val sb = SpannableStringBuilder(plain)
         markDim(sb, marks)
-        markHit(sb, bytes, info, hit, query)
+        markHit(sb, offs, info, hit, query)
         if (l == null || plain.isEmpty()) {
             textCache.put(r, sb)
             return sb
@@ -401,7 +435,7 @@ class ViewerActivity : Activity() {
             hlWorker.execute {
                 // Skip rows that scrolled far away before we got to them.
                 val colored = if (kotlin.math.abs(r - lastBound) > 80) null else
-                    Syntax.spannable(l, plain, colors).also { markDim(it, marks); markHit(it, bytes, info, hit, query) }
+                    Syntax.spannable(l, plain, colors).also { markDim(it, marks); markHit(it, offs, info, hit, query) }
                 ui.post {
                     queued.remove(r)
                     if (colored == null || gen != cacheGen || isFinishing) return@post
@@ -422,9 +456,9 @@ class ViewerActivity : Activity() {
         }
     }
 
-    private fun markHit(sb: SpannableStringBuilder, bytes: ByteArray, info: LineIndex.RowInfo, hit: Long, query: String?) {
+    private fun markHit(sb: SpannableStringBuilder, offs: IntArray, info: LineIndex.RowInfo, hit: Long, query: String?) {
         if (query == null || hit < info.start || hit >= info.end) return
-        val from = String(bytes, 0, min(bytes.size.toLong(), hit - info.start).toInt(), Charsets.UTF_8).length
+        val from = charIndex(offs, (hit - info.start).toInt())
         val to = min(sb.length, from + query.length)
         if (from < to) sb.setSpan(BackgroundColorSpan(0x66F0B429), from, to, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
@@ -433,12 +467,66 @@ class ViewerActivity : Activity() {
         cacheGen++
         queued.clear()
         textCache.evictAll()
+        offsetsCache.evictAll()
     }
 
-    private fun copyRow(r: Int) {
-        val t = try { text(r, info(r)).toString() } catch (e: IOException) { return }
-        (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(file.name, t))
-        toast(R.string.line_copied)
+    /** Byte offset (within the row) of every displayed char, plus one trailing entry for the row end. */
+    private fun rowOffsets(r: Int, info: LineIndex.RowInfo): IntArray {
+        offsetsCache.get(r)?.let { return it }
+        textCache.remove(r) // rebuild the row; text() refills offsetsCache
+        text(r, info)
+        return offsetsCache.get(r) ?: intArrayOf(0)
+    }
+
+    /** Lenient UTF-8 decode; invalid bytes become U+FFFD (one per byte). Returns text and per-char byte offsets. */
+    private fun decodeRow(b: ByteArray): Pair<String, IntArray> {
+        val sb = StringBuilder(b.size)
+        val offs = IntArray(b.size * 2 + 1)
+        var n = 0
+        var i = 0
+        fun cont(k: Int): Boolean {
+            for (j in 1..k) if (i + j >= b.size || (b[i + j].toInt() and 0xC0) != 0x80) return false
+            return true
+        }
+        fun bits(k: Int) = b[i + k].toInt() and 0x3F
+        while (i < b.size) {
+            val c = b[i].toInt() and 0xFF
+            var cp = -1
+            var len = 1
+            when {
+                c < 0x80 -> { cp = c }
+                c in 0xC2..0xDF && cont(1) -> { cp = ((c and 0x1F) shl 6) or bits(1); len = 2 }
+                c in 0xE0..0xEF && cont(2) -> {
+                    val v = ((c and 0x0F) shl 12) or (bits(1) shl 6) or bits(2)
+                    if (v >= 0x800 && v !in 0xD800..0xDFFF) { cp = v; len = 3 }
+                }
+                c in 0xF0..0xF4 && cont(3) -> {
+                    val v = ((c and 0x07) shl 18) or (bits(1) shl 12) or (bits(2) shl 6) or bits(3)
+                    if (v in 0x10000..0x10FFFF) { cp = v; len = 4 }
+                }
+            }
+            if (cp < 0) {
+                offs[n++] = i; sb.append('\uFFFD')
+            } else if (cp >= 0x10000) {
+                offs[n++] = i; offs[n++] = i; sb.appendCodePoint(cp)
+            } else {
+                offs[n++] = i; sb.append(cp.toChar())
+            }
+            i += len
+        }
+        offs[n] = b.size
+        return sb.toString() to offs.copyOf(n + 1)
+    }
+
+    /** First char whose byte offset is >= [byteRel] (clamped to the row end). */
+    private fun charIndex(offs: IntArray, byteRel: Int): Int {
+        var lo = 0
+        var hi = offs.size - 1
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            if (offs[mid] < byteRel) lo = mid + 1 else hi = mid
+        }
+        return lo
     }
 
     private val rows = object : BaseAdapter() {
@@ -474,8 +562,60 @@ class ViewerActivity : Activity() {
         }
 
         var boundRow = -1
+        var rowStart = 0L
+        var rowEnd = 0L
+        private var offs = IntArray(1)
+        private val path = Path()
+
+        init { setWillNotDraw(true) }
 
         fun setBody(t: CharSequence) { body.text = t }
+
+        fun shownText(): CharSequence = body.text
+
+        /** Absolute file offset of displayed char [ch]. */
+        fun byteOfChar(ch: Int): Long = rowStart + offs[ch.coerceIn(0, offs.size - 1)]
+
+        /** Char index under a point in this row's coordinates. */
+        fun charAt(x: Float, y: Float): Int {
+            val l = body.layout ?: return 0
+            val by = (y - body.top - body.totalPaddingTop).toInt().coerceIn(0, max(0, l.height - 1))
+            val line = l.getLineForVertical(by)
+            return l.getOffsetForHorizontal(line, x - body.left - body.totalPaddingLeft).coerceIn(0, offs.size - 1)
+        }
+
+        fun byteAt(x: Float, y: Float): Long = byteOfChar(charAt(x, y))
+
+        /** Bottom-of-line point (row coordinates) for an absolute file offset inside this row. */
+        fun pointFor(off: Long): FloatArray? {
+            val l = body.layout ?: return null
+            val ch = charIndex(offs, (off - rowStart).toInt()).coerceAtMost(body.text.length)
+            val line = l.getLineForOffset(ch)
+            return floatArrayOf(
+                body.left + body.totalPaddingLeft + l.getPrimaryHorizontal(ch),
+                (body.top + body.totalPaddingTop + l.getLineBottom(line)).toFloat(),
+            )
+        }
+
+        // Selection highlight is drawn behind the text, straight from the selection's byte range,
+        // so it never touches the cached spannables.
+        override fun dispatchDraw(c: Canvas) {
+            val l = body.layout
+            if (selActive && l != null && selEnd > rowStart && selStart < rowEnd) {
+                val len = body.text.length
+                val cs = if (selStart <= rowStart) 0 else charIndex(offs, (selStart - rowStart).toInt()).coerceAtMost(len)
+                val ce = if (selEnd >= rowEnd) len else charIndex(offs, (selEnd - rowStart).toInt()).coerceAtMost(len)
+                if (cs < ce) {
+                    path.reset()
+                    l.getSelectionPath(cs, ce, path)
+                    c.save()
+                    c.translate((body.left + body.totalPaddingLeft).toFloat(), (body.top + body.totalPaddingTop).toFloat())
+                    c.drawPath(path, selPaint)
+                    c.restore()
+                }
+            }
+            super.dispatchDraw(c)
+        }
 
         fun bind(r: Int) {
             boundRow = r
@@ -495,10 +635,200 @@ class ViewerActivity : Activity() {
                 val info = info(r)
                 num.text = if (info.cont) "" else (info.line + 1).toString()
                 body.text = text(r, info)
+                offs = rowOffsets(r, info)
+                rowStart = info.start
+                rowEnd = info.end
             } catch (e: IOException) {
                 num.text = ""
                 body.setText(R.string.cannot_open)
             }
+        }
+    }
+
+    // ---------------------------------------------------------------- text selection
+    //
+    // Rows are separate views, so selection is our own: a byte range in the file, highlighted by each row,
+    // with two drag handles in an overlay and a Copy action bar. It works across any number of rows and in
+    // files of any size; Copy reads the range straight from the file.
+
+    private var selActive = false
+    private var selStart = 0L
+    private var selEnd = 0L
+    private var selMode: ActionMode? = null
+    private val selPaint = Paint().apply { color = 0x664A90E2 }
+    private lateinit var startHandle: Handle
+    private lateinit var endHandle: Handle
+    private var downX = 0f
+    private var downY = 0f
+    private val loc = IntArray(2)
+
+    private fun startSelection(row: RowView, x: Float, y: Float) {
+        val t = row.shownText()
+        val ch = row.charAt(x, y)
+        fun word(c: Char) = c.isLetterOrDigit() || c == '_'
+        var a = ch
+        var b = ch
+        if (ch < t.length && word(t[ch])) {
+            while (a > 0 && word(t[a - 1])) a--
+            while (b < t.length && word(t[b])) b++
+        } else {
+            b = min(ch + 1, t.length)
+        }
+        selStart = row.byteOfChar(a)
+        selEnd = row.byteOfChar(b)
+        if (selEnd <= selStart) selEnd = min(selStart + 1, src.size)
+        if (selEnd <= selStart) return // empty file
+        selActive = true
+        if (selMode == null) selMode = startActionMode(selectionCallback)
+        onSelectionChanged()
+    }
+
+    private val selectionCallback = object : ActionMode.Callback {
+        override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+            menu.add(0, S_COPY, 0, R.string.copy).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            menu.add(0, S_ALL, 1, R.string.select_all).setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
+            return true
+        }
+
+        override fun onPrepareActionMode(mode: ActionMode, menu: Menu) = false
+
+        override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+            when (item.itemId) {
+                S_COPY -> { copySelection(); mode.finish() }
+                S_ALL -> { selStart = 0; selEnd = src.size; onSelectionChanged() }
+            }
+            return true
+        }
+
+        override fun onDestroyActionMode(mode: ActionMode) {
+            selMode = null
+            selActive = false
+            startHandle.visibility = View.GONE
+            endHandle.visibility = View.GONE
+            stopAutoScroll()
+            redrawRows()
+        }
+    }
+
+    private fun onSelectionChanged() {
+        redrawRows()
+        placeHandles()
+        selMode?.title = android.text.format.Formatter.formatShortFileSize(this, selEnd - selStart)
+    }
+
+    private fun redrawRows() {
+        for (i in 0 until list.childCount) list.getChildAt(i).invalidate()
+    }
+
+    /** Put each handle under its end of the selection, or hide it when that end is off screen. */
+    private fun placeHandles() {
+        place(startHandle, selStart, start = true)
+        place(endHandle, selEnd, start = false)
+    }
+
+    private fun place(h: Handle, off: Long, start: Boolean) {
+        if (!selActive) { h.visibility = View.GONE; return }
+        for (i in 0 until list.childCount) {
+            val row = list.getChildAt(i) as? RowView ?: continue
+            val inside = if (start) off >= row.rowStart && off < row.rowEnd else off > row.rowStart && off <= row.rowEnd
+            if (!inside) continue
+            val p = row.pointFor(off) ?: break
+            h.translationX = list.left + row.left + p[0] - h.widthPx / 2f
+            h.translationY = list.top + row.top + p[1]
+            h.visibility = if (row.top + p[1] in 0f..list.height.toFloat()) View.VISIBLE else View.INVISIBLE
+            return
+        }
+        h.visibility = View.INVISIBLE
+    }
+
+    // ---- dragging a handle (with auto-scroll near the top/bottom edge)
+
+    private var dragStart = true
+    private var dragX = 0f
+    private var dragY = 0f
+    private var scrollStep = 0
+    private val autoScroll = object : Runnable {
+        override fun run() {
+            if (scrollStep == 0) return
+            list.scrollListBy(scrollStep)
+            dragUpdate(dragX, dragY)
+            ui.postDelayed(this, 16)
+        }
+    }
+
+    private fun stopAutoScroll() {
+        scrollStep = 0
+        ui.removeCallbacks(autoScroll)
+    }
+
+    private fun dragTo(h: Handle, rawX: Float, rawY: Float) {
+        list.getLocationOnScreen(loc)
+        dragStart = h.isStart
+        dragX = rawX - loc[0]
+        // Aim at the text just above the finger, not under it.
+        dragY = rawY - loc[1] - h.heightPx - Ui.dp(this, 4)
+        val edge = Ui.dp(this, 28)
+        val step = when {
+            dragY < edge -> -Ui.dp(this, 10)
+            dragY > list.height - edge -> Ui.dp(this, 10)
+            else -> 0
+        }
+        if (step != scrollStep) {
+            scrollStep = step
+            ui.removeCallbacks(autoScroll)
+            if (step != 0) ui.post(autoScroll)
+        }
+        dragUpdate(dragX, dragY)
+    }
+
+    private fun dragUpdate(x: Float, y: Float) {
+        if (list.childCount == 0) return
+        val yy = y.coerceIn(0f, list.height - 1f)
+        var row: RowView? = null
+        for (i in 0 until list.childCount) {
+            val c = list.getChildAt(i)
+            if (yy >= c.top && yy < c.bottom) { row = c as? RowView; break }
+        }
+        row ?: return
+        val off = row.byteAt(x - row.left, yy - row.top)
+        // Handles don't swap roles: each one stops one byte short of the other.
+        if (dragStart) selStart = off.coerceAtMost(selEnd - 1) else selEnd = off.coerceAtLeast(selStart + 1)
+        onSelectionChanged()
+    }
+
+    private fun copySelection() {
+        val len = selEnd - selStart
+        val n = min(len, MAX_COPY)
+        val text = try { String(src.read(selStart, selStart + n), Charsets.UTF_8) } catch (e: IOException) { toast(R.string.failed); return }
+        (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(file.name, text))
+        if (n < len) toast(getString(R.string.copied_truncated, android.text.format.Formatter.formatShortFileSize(this, n)))
+        else toast(R.string.copied_text)
+    }
+
+    /** Teardrop selection handle; its tip sits at the bottom of the selected line. */
+    private inner class Handle(ctx: Context, val isStart: Boolean) : View(ctx) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF4A90E2.toInt() }
+        private val r = Ui.dp(ctx, 11).toFloat()
+        private val stem = Ui.dp(ctx, 5).toFloat()
+        val widthPx get() = (r * 2).toInt()
+        val heightPx get() = (r * 2 + stem).toInt()
+
+        init { visibility = View.GONE }
+
+        override fun onMeasure(w: Int, h: Int) = setMeasuredDimension(widthPx, heightPx)
+
+        override fun onDraw(c: Canvas) {
+            c.drawRect(r - Ui.dp(context, 1), 0f, r + Ui.dp(context, 1), stem + r, paint)
+            c.drawCircle(r, stem + r, r, paint)
+        }
+
+        override fun onTouchEvent(e: MotionEvent): Boolean {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> parent?.requestDisallowInterceptTouchEvent(true)
+                MotionEvent.ACTION_MOVE -> dragTo(this, e.rawX, e.rawY)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> stopAutoScroll()
+            }
+            return true
         }
     }
 
@@ -628,6 +958,9 @@ class ViewerActivity : Activity() {
     }
 
     private companion object {
+        const val S_COPY = 1
+        const val S_ALL = 2
+        const val MAX_COPY = 1L shl 20 // clipboard data goes through a ~1 MB binder transaction
         const val M_FIND = 1
         const val M_FIND_NEXT = 2
         const val M_GOTO = 3

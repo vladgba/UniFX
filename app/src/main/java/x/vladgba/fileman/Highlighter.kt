@@ -36,6 +36,11 @@ class Highlighter(private val edit: EditText, private val lang: Lang, private va
     private var pending = false
     private var dead = false
 
+    // Range already colored for the current text generation; scrolling inside it needs no span work.
+    private var coloredGen = -1
+    private var coloredFrom = 0
+    private var coloredTo = 0
+
     fun schedule(delayMs: Long) {
         ui.removeCallbacks(kick)
         ui.postDelayed(kick, delayMs)
@@ -86,6 +91,9 @@ class Highlighter(private val edit: EditText, private val lang: Lang, private va
         var to = min(t.length, bottom + screen)
         if (to < t.length) to = TextUtils.indexOf(t, '\n', to).let { if (it < 0) t.length else it }
 
+        // Already colored for this exact text? Nothing to do (avoids re-applying thousands of spans per scroll).
+        if (coloredGen == generation && from >= coloredFrom && to <= coloredTo) return
+
         // Resume from the last line whose state is known at or before the window.
         val k = lastKnownAtOrBefore(from)
         val base = starts[k]
@@ -106,7 +114,9 @@ class Highlighter(private val edit: EditText, private val lang: Lang, private va
                 if (Thread.currentThread().isInterrupted) return@execute
                 val nl = snapshot.indexOf('\n', i)
                 val end = if (nl < 0) n else nl
-                val color = base + i >= from
+                // Very long lines (minified files) are tokenized for state but not colored: thousands of spans on
+                // one paragraph make EditText re-measure and redraw the whole paragraph again and again.
+                val color = base + i >= from && end - i <= MAX_COLORED_LINE
                 val mark = spans.n
                 state = Syntax.line(lang, snapshot.substring(i, end), state, if (color) spans else null)
                 if (color) spans.shift(mark, 3, base + i)
@@ -155,6 +165,21 @@ class Highlighter(private val edit: EditText, private val lang: Lang, private va
             i += 3
         }
 
+        // Remember what is colored; extend the range when the new window touches the old one.
+        if (coloredGen == gen && from <= coloredTo && to >= coloredFrom) {
+            coloredFrom = min(coloredFrom, from)
+            coloredTo = max(coloredTo, to)
+        } else {
+            coloredGen = gen
+            coloredFrom = from
+            coloredTo = to
+        }
+
         if (pending) { pending = false; schedule(0) }
+    }
+
+    companion object {
+        /** Lines longer than this are left uncolored. */
+        const val MAX_COLORED_LINE = 2000
     }
 }

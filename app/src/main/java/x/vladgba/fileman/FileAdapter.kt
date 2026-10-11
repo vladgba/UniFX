@@ -43,6 +43,9 @@ class FileAdapter(private val ctx: Context) : BaseAdapter() {
     override fun getItem(position: Int) = shown[position]
     override fun getItemId(position: Int) = position.toLong()
 
+    /** Whether a position is selected. Recycled views keep their old highlight otherwise. */
+    var isChecked: (Int) -> Boolean = { false }
+
     override fun getViewTypeCount() = 2
     override fun getItemViewType(position: Int) = if (grid) 1 else 0
 
@@ -54,6 +57,7 @@ class FileAdapter(private val ctx: Context) : BaseAdapter() {
             cell.name.text = e.name
             cell.meta.text = if (e.isDir) "" else Formatter.formatShortFileSize(ctx, e.size)
             cell.meta.visibility = if (e.isDir) View.GONE else View.VISIBLE
+            cell.isActivated = isChecked(position)
             return cell
         }
         val row = convertView as? Row ?: Row(ctx)
@@ -61,6 +65,7 @@ class FileAdapter(private val ctx: Context) : BaseAdapter() {
         row.name.text = e.name
         val date = dateFmt.format(Date(e.modified))
         row.meta.text = if (e.isDir) date else Formatter.formatShortFileSize(ctx, e.size) + "  ·  " + date
+        row.isActivated = isChecked(position)
         return row
     }
 

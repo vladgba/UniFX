@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">UniFX</string>
+    <string name="open_as_text">UniFX Editor</string>
+    <string name="open_as_hex">UniFX Hex</string>
     <string name="internal">Internal storage</string>
     <string name="sd_card">SD card</string>
     <string name="app_files">App files</string>
@@ -62,6 +64,10 @@
     <string name="redo">Redo</string>
     <string name="back">Back</string>
     <string name="more">More</string>
+    <string name="close">Close</string>
+    <string name="paste_short">Paste</string>
+    <string name="to_paste">%d to paste</string>
+    <string name="selected_count">%d selected</string>
     <string name="show_invisibles">Show unprintable characters</string>
 
     <!-- Text editor -->
@@ -76,6 +82,7 @@
     <string name="font_bigger">Larger text</string>
     <string name="font_smaller">Smaller text</string>
     <string name="binary_title">Binary file</string>
+    <string name="long_lines_wrapped">Very long lines: word wrap turned on, long lines not highlighted</string>
     <string name="open_anyway">Edit as text anyway</string>
     <string name="too_large">Large file (%s): opened read-only</string>
 
@@ -86,7 +93,8 @@
     <string name="lines_count">%,d lines</string>
     <string name="indexing">indexing… %d%%</string>
     <string name="still_indexing">Still indexing, try again in a moment</string>
-    <string name="line_copied">Line copied</string>
+    <string name="copied_text">Copied</string>
+    <string name="copied_truncated">Copied the first %s (clipboard limit)</string>
 
     <!-- Hex editor -->
     <string name="go_to_offset">Go to offset</string>

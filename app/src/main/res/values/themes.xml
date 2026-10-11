@@ -10,5 +10,18 @@
     <style name="AppTheme.NoBar">
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
+        <!-- Selection bar: drawn over the top lines, primary color, light icons/text. -->
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:actionModeBackground">?android:attr/colorPrimary</item>
+        <item name="android:actionBarTheme">@android:style/ThemeOverlay.Material.Dark.ActionBar</item>
+    </style>
+
+    <!-- Invisible entry activity: shows only a spinner while copying a file from another app. -->
+    <style name="AppTheme.Translucent">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
     </style>
 </resources>

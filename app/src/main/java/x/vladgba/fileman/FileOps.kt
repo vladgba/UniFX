@@ -1,5 +1,8 @@
 package x.vladgba.fileman
 
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
 import java.io.File
 import java.io.IOException
 
@@ -29,7 +32,8 @@ object FileOps {
     /** Recursive delete that never follows symlinks into their targets. */
     fun delete(f: File): Boolean {
         if (f.isDirectory && !isLink(f)) f.listFiles()?.forEach { delete(it) }
-        return f.delete() || !f.exists()
+        // Not !f.exists(): that follows a link, so a dangling symlink we failed to delete would count as gone.
+        return f.delete() || !existsNoFollow(f)
     }
 
     private fun copy(src: File, dst: File, depth: Int): Boolean = try {
@@ -55,13 +59,14 @@ object FileOps {
     /** "name.ext" -> "name (1).ext" until it doesn't collide. */
     fun unique(dir: File, name: String): File {
         var f = File(dir, name)
-        if (!f.exists()) return f
+        // existsNoFollow: a dangling symlink is taken, or writing to it would create its target elsewhere.
+        if (!existsNoFollow(f)) return f
         val dot = name.lastIndexOf('.')
         val isFileWithExt = dot > 0 && !File(dir, name).isDirectory
         val base = if (isFileWithExt) name.substring(0, dot) else name
         val ext = if (isFileWithExt) name.substring(dot) else ""
         var n = 1
-        while (f.exists()) f = File(dir, "$base (${n++})$ext")
+        while (existsNoFollow(f)) f = File(dir, "$base (${n++})$ext")
         return f
     }
 
@@ -73,10 +78,18 @@ object FileOps {
         return (canon(dir) + "/").startsWith(canon(f) + "/")
     }
 
+    /** lstat-based, so it also sees symlinks whose target is missing (File.exists() follows the link). */
     fun isLink(f: File): Boolean = try {
-        val parent = f.parentFile?.canonicalFile ?: return false
-        File(parent, f.name).canonicalPath != File(parent, f.name).absolutePath
-    } catch (e: IOException) {
+        OsConstants.S_ISLNK(Os.lstat(f.path).st_mode)
+    } catch (e: ErrnoException) {
+        false
+    }
+
+    /** Whether anything, a dangling symlink included, is at this path. */
+    fun existsNoFollow(f: File): Boolean = try {
+        Os.lstat(f.path)
+        true
+    } catch (e: ErrnoException) {
         false
     }
 

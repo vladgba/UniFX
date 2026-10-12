@@ -512,7 +512,7 @@ class MainActivity : Activity() {
             id == M_NEW_DIR -> prompt(R.string.new_folder, "") { name ->
                 val f = File(cwd, name)
                 when {
-                    f.exists() -> toast(R.string.exists)
+                    FileOps.existsNoFollow(f) -> toast(R.string.exists)
                     !f.mkdir() -> toast(R.string.failed)
                     else -> load()
                 }
@@ -638,8 +638,10 @@ class MainActivity : Activity() {
     private fun rename(f: File) = prompt(R.string.rename, f.name) { name ->
         if (name == f.name) return@prompt
         val target = File(f.parentFile, name)
+        // Case-only rename ("a.txt" -> "A.txt") is fine on case-insensitive storage, where target "exists" as f.
+        val caseOnly = name.equals(f.name, ignoreCase = true)
         when {
-            target.exists() -> toast(R.string.exists)
+            !caseOnly && FileOps.existsNoFollow(target) -> toast(R.string.exists)
             !f.renameTo(target) -> toast(R.string.failed)
             else -> load()
         }

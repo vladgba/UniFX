@@ -93,11 +93,14 @@ object Openers {
         }
     }
 
-    /** Returns false if no app can handle the file. */
+    /**
+     * Returns false if no app can handle the file. Read access only: a viewer has no business changing the
+     * file, and since we hold all-files access, a write grant would let any picked app rewrite anything we pass.
+     */
     fun external(a: Activity, f: File, chooser: Boolean): Boolean {
         val view = Intent(Intent.ACTION_VIEW)
             .setDataAndType(FilesProvider.uri(a, f), mime(f))
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         return start(a, if (chooser) Intent.createChooser(view, f.name) else view)
     }
 

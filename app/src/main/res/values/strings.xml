@@ -111,4 +111,5 @@
     <string name="searching">Searching…</string>
     <string name="bad_hex">Invalid hex (use pairs like DE AD BE EF)</string>
     <string name="out_of_range">Offset out of range</string>
+    <string name="saving">Saving…</string>
 </resources>

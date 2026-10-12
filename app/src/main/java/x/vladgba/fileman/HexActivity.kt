@@ -84,17 +84,25 @@ class HexDoc(val file: File) : Closeable {
         return b
     }
 
-    fun save() {
+    /**
+     * Writes [snapshot] (a copy of [patches]) to disk, merging adjacent bytes into runs. Touches no shared state,
+     * so it can run on a background thread; call [committed] on the UI thread afterwards.
+     */
+    fun write(snapshot: Map<Long, Byte>) {
         RandomAccessFile(file, "rw").use { w ->
             var runStart = -1L
             val run = java.io.ByteArrayOutputStream()
             fun flush() { if (run.size() > 0) { w.seek(runStart); w.write(run.toByteArray()); run.reset() } }
-            for ((off, v) in patches) {
+            for ((off, v) in snapshot) {
                 if (runStart < 0 || off != runStart + run.size()) { flush(); runStart = off }
                 run.write(v.toInt())
             }
             flush()
         }
+    }
+
+    /** After a successful [write]: the file now holds those bytes, so drop the cached pages and the patches. */
+    fun committed() {
         patches.clear()
         pages.clear()
     }
@@ -147,6 +155,7 @@ class HexActivity : Activity() {
     private var readOnly = false
     private var lastPattern: ByteArray? = null
     private var searching = false
+    private var saving = false // edits are blocked while a save runs on its background thread
 
     private class Edit(val off: Long, val old: Int, val new: Int)
 
@@ -309,7 +318,7 @@ class HexActivity : Activity() {
     }
 
     private fun type(nibble: Int) {
-        if (readOnly || doc.size == 0L) return
+        if (readOnly || saving || doc.size == 0L) return
         val old = doc.get(cursor)
         val v = if (!lowNibble) (nibble shl 4) or (old and 0x0F) else (old and 0xF0) or nibble
         write(listOf(cursor to v))
@@ -327,6 +336,7 @@ class HexActivity : Activity() {
     }
 
     private fun undoLast() {
+        if (saving) return
         val group = undo.removeLastOrNull() ?: return
         group.asReversed().forEach { doc.set(it.off, it.old) }
         cursor = group.first().off
@@ -413,7 +423,7 @@ class HexActivity : Activity() {
     }
 
     private fun writeText() {
-        if (readOnly || doc.size == 0L) return
+        if (readOnly || saving || doc.size == 0L) return
         Ui.input(this, getString(R.string.write_text), "", InputType.TYPE_CLASS_TEXT, android.R.string.ok, { s ->
             val bytes = s.toByteArray(Charsets.UTF_8)
             val n = min(bytes.size.toLong(), doc.size - cursor).toInt()
@@ -425,20 +435,30 @@ class HexActivity : Activity() {
         })
     }
 
+    /** Disk and write-back I/O run off the UI thread: a write-back to a cloud provider can take seconds. */
     private fun save(then: (() -> Unit)? = null) {
-        try {
-            doc.save()
+        if (saving || readOnly || doc.patches.isEmpty()) return
+        val snapshot = TreeMap(doc.patches)
+        saving = true
+        invalidateOptionsMenu()
+        status.setText(R.string.saving)
+        Thread {
+            val written = try { doc.write(snapshot); true } catch (e: IOException) { false }
             // Cached copy of another app's file: also write back to the original URI.
-            if (!Openers.writeBack(this, doc.file)) throw IOException("write-back failed")
-            undo.clear()
-            toast(R.string.saved)
-            updateTitle()
-            invalidateOptionsMenu()
-            list.invalidateViews()
-            then?.invoke()
-        } catch (e: IOException) {
-            toast(R.string.failed)
-        }
+            val ok = written && Openers.writeBack(this, doc.file)
+            ui.post {
+                saving = false
+                if (isDestroyed) return@post
+                // The local file holds the bytes even if the write-back failed, so the patches are done either way.
+                if (written) { doc.committed(); undo.clear() }
+                toast(if (ok) R.string.saved else R.string.failed)
+                updateTitle()
+                updateStatus()
+                invalidateOptionsMenu()
+                list.invalidateViews()
+                if (ok) then?.invoke()
+            }
+        }.start()
     }
 
     // ---------------------------------------------------------------- menu
@@ -457,8 +477,8 @@ class HexActivity : Activity() {
     }
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        menu.findItem(M_SAVE).isEnabled = doc.patches.isNotEmpty() && !readOnly
-        menu.findItem(M_UNDO).isEnabled = undo.isNotEmpty()
+        menu.findItem(M_SAVE).isEnabled = doc.patches.isNotEmpty() && !readOnly && !saving
+        menu.findItem(M_UNDO).isEnabled = undo.isNotEmpty() && !saving
         menu.findItem(M_FIND_NEXT).isVisible = lastPattern != null
         menu.findItem(M_TEXT).isVisible = !readOnly
         menu.findItem(M_KEYPAD).apply { isVisible = !readOnly; isChecked = keypad.visibility == View.VISIBLE }
@@ -486,6 +506,7 @@ class HexActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (saving) return // finishes by itself if this save came from the "Save changes?" prompt
         if (doc.patches.isNotEmpty()) Ui.confirmUnsaved(this, doc.file.name, { save { finish() } }, { finish() })
         else super.onBackPressed()
     }

@@ -343,7 +343,7 @@ class ViewerActivity : Activity() {
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(frame, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
-            Ui.applyInsets(this)
+            Ui.applyInsets(this, underActionBar = true)
         })
 
         index = LineIndex(file)

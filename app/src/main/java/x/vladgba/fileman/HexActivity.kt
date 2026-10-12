@@ -245,8 +245,12 @@ class HexActivity : Activity() {
             setOnItemClickListener { _, _, pos, _ -> tapAt(pos, lastTouchX) }
             addOnLayoutChangeListener { v, l, _, r, _, oldL, _, oldR, _ ->
                 if (r - l != oldR - oldL && layoutColumns(v.width)) {
-                    rows.notifyDataSetChanged()
-                    setSelection((cursor / bpr).toInt())
+                    // Posted: a change notified during layout isn't laid out, so the list kept the row count
+                    // for the old bytes-per-row (a 16-byte file at 8 per row showed only its first row).
+                    v.post {
+                        rows.notifyDataSetChanged()
+                        setSelection((cursor / bpr).toInt())
+                    }
                 }
                 header.invalidate()
             }
@@ -274,7 +278,7 @@ class HexActivity : Activity() {
             addView(list, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             addView(status, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(keypad, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-            Ui.applyInsets(this)
+            Ui.applyInsets(this, underActionBar = true)
         }
     }
 

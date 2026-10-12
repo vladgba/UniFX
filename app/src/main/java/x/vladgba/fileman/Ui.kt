@@ -24,12 +24,17 @@ object Ui {
     fun isNight(ctx: Context) =
         (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
-    /** Edge-to-edge (targetSdk 35): keep content clear of the navigation bar and the keyboard. */
-    fun applyInsets(root: View) {
+    /**
+     * Edge-to-edge (targetSdk 35): keep content clear of the navigation bar and the keyboard. Screens with the
+     * system action bar pass [underActionBar]: on API 35+ their content starts at the very top of the window,
+     * behind the status bar and the action bar, and the top inset it receives covers both.
+     */
+    fun applyInsets(root: View, underActionBar: Boolean = false) {
         root.setOnApplyWindowInsetsListener { v, insets ->
             if (Build.VERSION.SDK_INT >= 30) {
                 val i = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
-                v.setPadding(i.left, 0, i.right, i.bottom)
+                val top = if (underActionBar && Build.VERSION.SDK_INT >= 35) i.top else 0
+                v.setPadding(i.left, top, i.right, i.bottom)
             } else {
                 @Suppress("DEPRECATION")
                 v.setPadding(insets.systemWindowInsetLeft, 0, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)

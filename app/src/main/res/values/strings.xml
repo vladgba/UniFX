@@ -51,6 +51,9 @@
     <string name="hex_editor">Hex editor</string>
     <string name="save">Save</string>
     <string name="saved">Saved</string>
+    <string name="charset_title">Not saved</string>
+    <string name="charset_msg">This file\'s encoding (%1$s) can\'t store %2$d of the characters you typed: %3$s.\n\nSaving would replace them with \'?\', so the file was not saved. Remove or replace them, then save again.</string>
+    <string name="charset_show">Show first</string>
     <string name="discard">Discard</string>
     <string name="unsaved_title">Unsaved changes</string>
     <string name="unsaved_msg">Save changes to %s?</string>

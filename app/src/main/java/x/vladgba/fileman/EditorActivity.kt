@@ -335,6 +335,12 @@ class EditorActivity : Activity() {
     private fun save(then: (() -> Unit)? = null) {
         if (!loaded || saving) return
         val text = edit.text.toString()
+        // The file's encoding may not hold everything typed (Latin-1 has no Cyrillic or emoji; no charset holds a
+        // lone surrogate). Encoding would silently turn those into '?', so refuse to save and say why.
+        if (!charset.newEncoder().canEncode(text)) {
+            warnUnencodable(text)
+            return
+        }
         val bytes = encode(text)
         val rev = revision
         saving = true
@@ -350,6 +356,51 @@ class EditorActivity : Activity() {
                 then?.invoke()
             }
         }.start()
+    }
+
+    /** Characters [charset] can't store: how many, where the first one is, and a few distinct examples. */
+    private class Unencodable(val count: Int, val first: Int, val firstLen: Int, val samples: List<Int>)
+
+    private fun findUnencodable(text: String): Unencodable {
+        val enc = charset.newEncoder()
+        val known = HashMap<Int, Boolean>() // per code point, so a long text doesn't re-ask the encoder
+        var count = 0
+        var first = -1
+        var firstLen = 0
+        val samples = LinkedHashSet<Int>()
+        var i = 0
+        while (i < text.length) {
+            val cp = text.codePointAt(i)
+            val len = Character.charCount(cp)
+            val ok = known.getOrPut(cp) { enc.canEncode(text.substring(i, i + len)) }
+            if (!ok) {
+                if (first < 0) { first = i; firstLen = len }
+                count++
+                if (samples.size < MAX_SAMPLES) samples += cp
+            }
+            i += len
+        }
+        return Unencodable(count, first, firstLen, samples.toList())
+    }
+
+    private fun warnUnencodable(text: String) {
+        val bad = findUnencodable(text)
+        if (bad.first < 0) return // canEncode disagreed with the per-character check; nothing to point at
+        val list = bad.samples.joinToString(", ") { cp ->
+            val hex = "U+" + Integer.toHexString(cp).uppercase().padStart(4, '0')
+            // A lone surrogate or control character has nothing printable to show.
+            if (Character.isISOControl(cp) || cp in 0xD800..0xDFFF) hex else String(Character.toChars(cp)) + " ($hex)"
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.charset_title)
+            .setMessage(getString(R.string.charset_msg, charset.name(), bad.count, list))
+            .setPositiveButton(R.string.charset_show) { _, _ ->
+                findBar.visibility = View.GONE
+                edit.requestFocus()
+                edit.setSelection(bad.first, bad.first + bad.firstLen)
+            }
+            .setNegativeButton(android.R.string.ok, null)
+            .show()
     }
 
     /** Attach or detach the async highlighter; when off, all color spans are removed. */
@@ -548,6 +599,7 @@ class EditorActivity : Activity() {
     }
 
     private companion object {
+        const val MAX_SAMPLES = 5 // distinct unencodable characters listed in the warning
 
         const val M_SAVE = 1
         const val M_UNDO = 2

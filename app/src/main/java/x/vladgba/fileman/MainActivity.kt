@@ -369,8 +369,8 @@ class MainActivity : Activity() {
 
     private fun updateInfo() {
         val parts = ArrayList<String>()
-        itemCount?.let { parts += getString(R.string.items, it) }
-        if (clip.isNotEmpty()) parts += getString(R.string.to_paste, clip.size)
+        itemCount?.let { parts += resources.getQuantityString(R.plurals.items, it, it) }
+        if (clip.isNotEmpty()) parts += resources.getQuantityString(R.plurals.to_paste, clip.size, clip.size)
         infoView.text = parts.joinToString(" · ")
     }
 
@@ -575,7 +575,7 @@ class MainActivity : Activity() {
     private fun onSelectionChanged() {
         val sel = selected()
         val one = sel.size == 1
-        titleView.text = getString(R.string.selected_count, sel.size)
+        titleView.text = resources.getQuantityString(R.plurals.selected_count, sel.size, sel.size)
         val bytes = sel.filter { !it.isDir }.sumOf { it.size }
         infoView.text = if (bytes > 0) Formatter.formatShortFileSize(this, bytes) else ""
         fun show(id: Int, v: Boolean) { selButtons[id]?.visibility = if (v) View.VISIBLE else View.GONE }
@@ -598,7 +598,7 @@ class MainActivity : Activity() {
             A_COPY, A_CUT -> {
                 clip = sel.map { it.file }
                 clipMove = id == A_CUT
-                toast(getString(R.string.copied, clip.size))
+                toast(resources.getQuantityString(R.plurals.copied, clip.size, clip.size))
                 refreshBar()
             }
             A_DELETE -> confirmDelete(sel.map { it.file })
@@ -649,7 +649,7 @@ class MainActivity : Activity() {
 
     private fun confirmDelete(files: List<File>) {
         AlertDialog.Builder(this)
-            .setMessage(getString(R.string.delete_confirm, files.size))
+            .setMessage(resources.getQuantityString(R.plurals.delete_confirm, files.size, files.size))
             .setPositiveButton(R.string.delete) { _, _ ->
                 clip = clip - files.toSet()
                 refreshBar()
@@ -682,7 +682,7 @@ class MainActivity : Activity() {
                 busy(false)
                 when {
                     failed < 0 -> toast(R.string.failed)
-                    failed > 0 -> toast(getString(R.string.partly_failed, failed))
+                    failed > 0 -> toast(resources.getQuantityString(R.plurals.partly_failed, failed, failed))
                     else -> toast(R.string.done)
                 }
                 load()
@@ -696,13 +696,22 @@ class MainActivity : Activity() {
             val (count, bytes) = FileOps.stats(f)
             val perms = (if (f.canRead()) "r" else "-") + (if (f.canWrite()) "w" else "-") + (if (f.canExecute()) "x" else "-")
             val text = buildString {
-                append("Path\n").append(f.absolutePath).append("\n\n")
-                append("Size\n").append(Formatter.formatFileSize(this@MainActivity, bytes)).append(" ($bytes bytes)\n\n")
-                if (f.isDirectory) append("Contains\n").append(count).append(" files\n\n")
-                else append("Type\n").append(Openers.mime(f)).append("\n\n")
-                append("Modified\n").append(DateFormat.getDateTimeInstance().format(Date(f.lastModified()))).append("\n\n")
-                append("Access\n").append(perms)
-                if (FileOps.isLink(f)) append("  (symlink → ").append(f.canonicalPath).append(")")
+                fun field(label: Int, value: String) {
+                    if (isNotEmpty()) append("\n\n")
+                    append(getString(label)).append('\n').append(value)
+                }
+                field(R.string.prop_path, f.absolutePath)
+                field(R.string.prop_size, getString(R.string.prop_size_value,
+                    Formatter.formatFileSize(this@MainActivity, bytes), "%,d".format(bytes)))
+                if (f.isDirectory) {
+                    val n = count.toInt()
+                    field(R.string.prop_contains, resources.getQuantityString(R.plurals.files, n, n))
+                } else {
+                    field(R.string.prop_type, Openers.mime(f))
+                }
+                field(R.string.prop_modified, DateFormat.getDateTimeInstance().format(Date(f.lastModified())))
+                val access = if (FileOps.isLink(f)) getString(R.string.prop_symlink, perms, f.canonicalPath) else perms
+                field(R.string.prop_access, access)
             }
             ui.post {
                 if (isFinishing || isDestroyed) return@post

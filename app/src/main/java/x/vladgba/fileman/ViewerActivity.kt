@@ -381,7 +381,7 @@ class ViewerActivity : Activity() {
         val parts = ArrayList<String>()
         parts += getString(R.string.read_only)
         if (binary) parts += getString(R.string.binary)
-        parts += if (index.done) getString(R.string.lines_count, index.lines)
+        parts += if (index.done) resources.getQuantityString(R.plurals.lines_count, index.lines.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), index.lines)
         else getString(R.string.indexing, if (src.size == 0L) 100 else (index.scanned * 100 / src.size).toInt())
         actionBar?.subtitle = parts.joinToString(" · ")
     }

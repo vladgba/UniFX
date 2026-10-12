@@ -10,7 +10,6 @@
     <string name="grant_access">UniFX needs storage access to show your files. Tap to grant.</string>
     <string name="empty">Empty folder</string>
     <string name="cannot_read">Can\'t read this folder</string>
-    <string name="items">%d items</string>
     <string name="search">Search</string>
     <string name="paste">Paste (%d)</string>
     <string name="new_folder">New folder</string>
@@ -32,14 +31,11 @@
     <string name="share">Share</string>
     <string name="open_with">Open with…</string>
     <string name="properties">Properties</string>
-    <string name="delete_confirm">Delete %d item(s)? This can\'t be undone.</string>
     <string name="bad_name">Invalid name</string>
     <string name="exists">Already exists</string>
     <string name="failed">Operation failed</string>
-    <string name="partly_failed">%d item(s) failed</string>
     <string name="done">Done</string>
     <string name="into_itself">Can\'t paste a folder into itself</string>
-    <string name="copied">%d item(s) ready to paste</string>
     <string name="no_app">No app can open this file</string>
     <string name="cannot_open">Can\'t open this file</string>
     <string name="view_grid">Grid view</string>
@@ -69,8 +65,6 @@
     <string name="more">More</string>
     <string name="close">Close</string>
     <string name="paste_short">Paste</string>
-    <string name="to_paste">%d to paste</string>
-    <string name="selected_count">%d selected</string>
     <string name="show_invisibles">Show unprintable characters</string>
 
     <!-- Text editor -->
@@ -78,7 +72,6 @@
     <string name="replace_hint">Replace with</string>
     <string name="replace">Replace</string>
     <string name="replace_all">All</string>
-    <string name="replaced">%d replaced</string>
     <string name="go_to_line">Go to line</string>
     <string name="word_wrap">Word wrap</string>
     <string name="line_numbers">Line numbers</string>
@@ -93,7 +86,6 @@
     <string name="text_viewer">Text viewer (read-only)</string>
     <string name="edit">Edit</string>
     <string name="binary">binary</string>
-    <string name="lines_count">%,d lines</string>
     <string name="indexing">indexing… %d%%</string>
     <string name="still_indexing">Still indexing, try again in a moment</string>
     <string name="copied_text">Copied</string>
@@ -111,5 +103,53 @@
     <string name="searching">Searching…</string>
     <string name="bad_hex">Invalid hex (use pairs like DE AD BE EF)</string>
     <string name="out_of_range">Offset out of range</string>
+
+    <!-- Counts (plurals: translations can add few/many) -->
+    <plurals name="items">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <plurals name="to_paste">
+        <item quantity="one">%d to paste</item>
+        <item quantity="other">%d to paste</item>
+    </plurals>
+    <plurals name="selected_count">
+        <item quantity="one">%d selected</item>
+        <item quantity="other">%d selected</item>
+    </plurals>
+    <plurals name="copied">
+        <item quantity="one">%d item ready to paste</item>
+        <item quantity="other">%d items ready to paste</item>
+    </plurals>
+    <plurals name="delete_confirm">
+        <item quantity="one">Delete %d item? This can\'t be undone.</item>
+        <item quantity="other">Delete %d items? This can\'t be undone.</item>
+    </plurals>
+    <plurals name="partly_failed">
+        <item quantity="one">%d item failed</item>
+        <item quantity="other">%d items failed</item>
+    </plurals>
+    <plurals name="files">
+        <item quantity="one">%,d file</item>
+        <item quantity="other">%,d files</item>
+    </plurals>
+    <plurals name="replaced">
+        <item quantity="one">%d replaced</item>
+        <item quantity="other">%d replaced</item>
+    </plurals>
+    <plurals name="lines_count">
+        <item quantity="one">%,d line</item>
+        <item quantity="other">%,d lines</item>
+    </plurals>
+
+    <!-- Properties dialog -->
+    <string name="prop_path">Path</string>
+    <string name="prop_size">Size</string>
+    <string name="prop_size_value">%1$s (%2$s bytes)</string>
+    <string name="prop_contains">Contains</string>
+    <string name="prop_type">Type</string>
+    <string name="prop_modified">Modified</string>
+    <string name="prop_access">Access</string>
+    <string name="prop_symlink">%1$s (symlink → %2$s)</string>
     <string name="saving">Saving…</string>
 </resources>

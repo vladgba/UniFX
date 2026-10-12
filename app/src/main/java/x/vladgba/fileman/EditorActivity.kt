@@ -470,7 +470,7 @@ class EditorActivity : Activity() {
             val out = m.reset().replaceAll(Matcher.quoteReplacement(replaceInput.text.toString()))
             edit.text.replace(0, edit.text.length, out) // one undo step
         }
-        toast(getString(R.string.replaced, n))
+        toast(resources.getQuantityString(R.plurals.replaced, n, n))
     }
 
     private fun goToLine() {

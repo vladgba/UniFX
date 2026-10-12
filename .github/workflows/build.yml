@@ -34,14 +34,14 @@ jobs:
             echo "RELEASE_STORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
           fi
 
-      - name: Build APKs
+      - name: Test, lint and build APKs
         env:
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon printVersion assembleDebug assembleRelease
+          ./gradlew --no-daemon printVersion testDebugUnitTest lintDebug assembleDebug assembleRelease
 
       - uses: actions/upload-artifact@v4
         with:

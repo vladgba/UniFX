@@ -283,6 +283,10 @@ class MainActivity : Activity() {
             visibility = View.GONE
             setPadding(dp(8), 0, 0, 0)
             addView(searchInput, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            // Deep search: subfolders and file contents, on its own screen.
+            addView(Ui.button(context, getString(R.string.search_subfolders)) { openDeepSearch() }.apply {
+                setTextColor(Color.WHITE)
+            }, LinearLayout.LayoutParams(WRAP_CONTENT, dp(44)))
             addView(barIcon(R.drawable.ic_close, R.string.close) { closeSearch() }, LinearLayout.LayoutParams(dp(44), dp(44)))
         }
         pasteButton = barIcon(R.drawable.ic_paste, R.string.paste_short) { paste() }.apply { visibility = View.GONE }
@@ -345,6 +349,23 @@ class MainActivity : Activity() {
         searchRow.visibility = View.VISIBLE
         searchInput.requestFocus()
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(searchInput, 0)
+    }
+
+    private fun openDeepSearch() {
+        val i = android.content.Intent(this, SearchActivity::class.java)
+            .putExtra(Openers.EXTRA_PATH, cwd.path)
+            .putExtra(SearchActivity.EXTRA_NAME, searchInput.text.toString())
+        @Suppress("DEPRECATION")
+        startActivityForResult(i, REQ_SEARCH)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_SEARCH || resultCode != RESULT_OK) return
+        val dir = data?.getStringExtra(Openers.EXTRA_PATH)?.let(::File)?.takeIf { it.isDirectory } ?: return
+        navigate(dir)
     }
 
     private fun closeSearch() {
@@ -830,5 +851,7 @@ class MainActivity : Activity() {
         const val A_ZIP = 11
         const val A_UNZIP = 12
         const val A_BATCH_RENAME = 13
+
+        const val REQ_SEARCH = 1
     }
 }

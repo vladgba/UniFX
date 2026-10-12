@@ -176,6 +176,25 @@
     <string name="rename_invalid">invalid name</string>
     <string name="rename_duplicate">same name twice</string>
 
+    <!-- Search in subfolders / file contents -->
+    <string name="search_subfolders">Subfolders…</string>
+    <string name="search_title">Search</string>
+    <string name="search_name_hint">Name: part of it, *.txt or regex</string>
+    <string name="search_content_hint">Containing text (optional)</string>
+    <string name="regex_short">Regex</string>
+    <string name="search_hidden">Hidden files</string>
+    <string name="search_go">Search</string>
+    <string name="search_stop">Stop</string>
+    <string name="search_idle">Searches this folder and everything inside it.</string>
+    <string name="search_running">Searching… %1$,d checked, %2$s</string>
+    <string name="search_done">%1$s (%2$,d checked).</string>
+    <string name="search_truncated">Stopped at %,d results.</string>
+    <string name="search_need_input">Enter a name or some text to find</string>
+    <plurals name="search_found">
+        <item quantity="one">%,d found</item>
+        <item quantity="other">%,d found</item>
+    </plurals>
+
     <!-- Zip -->
     <string name="zip_compress">Compress to ZIP</string>
     <string name="zip_extract">Extract here</string>

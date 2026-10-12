@@ -15,6 +15,7 @@ UniFX has **zero library dependencies**. It uses only the Android framework and 
 - Clickable breadcrumb path bar; Back goes up one folder until you reach a storage root
 - Sort by name, size, date or type, ascending or descending; folders always come first
 - Show/hide hidden files, and filter the current folder by name
+- Search the current folder and everything inside it (search row → Subfolders…) by name (part of it, `*.txt` wildcard, or regex) and/or by text inside files (plain or regex, with line number and snippet). Results stream in and the search can be stopped; tap a result to open it, long-press to show it in its folder
 - Storage shortcuts: internal storage, SD cards / USB drives, the app's own files, and `/`
 - Long-press to multi-select: copy, cut, paste, delete, rename, share, open with…, properties
 - Rename by pattern (⋮ → Rename by pattern…): wildcard (`*.jpeg` → `*.jpg`, `IMG_*` → `Photo *`) or Java regex with `$1` groups, optional match case, and a `[N]` / `[NNN]` counter. A live preview marks invalid names and clashes, which are skipped; renames go through temporary names, so swaps work

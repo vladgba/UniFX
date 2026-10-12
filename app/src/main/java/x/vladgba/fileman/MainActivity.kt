@@ -316,8 +316,9 @@ class MainActivity : Activity() {
                 Triple(A_RENAME, R.drawable.ic_rename, R.string.rename),
                 Triple(A_OPEN_WITH, R.drawable.ic_open_with, R.string.open_with),
                 Triple(A_INFO, R.drawable.ic_info, R.string.properties),
+                Triple(A_MORE, R.drawable.ic_more, R.string.more), // zip / extract
             ).forEach { (id, icon, label) ->
-                val b = barIcon(icon, label) { onSelectionAction(id) }
+                val b = barIcon(icon, label) { v -> onSelectionAction(id, v) }
                 selButtons[id] = b
                 addView(b, LinearLayout.LayoutParams(0, dp(48), 1f))
             }
@@ -585,12 +586,13 @@ class MainActivity : Activity() {
         show(A_SHARE, sel.isNotEmpty() && sel.none { it.isDir })
     }
 
-    private fun onSelectionAction(id: Int) {
+    private fun onSelectionAction(id: Int, anchor: View) {
         if (id == A_ALL) {
             for (i in 0 until adapter.count) list.setItemChecked(i, true)
             onSelectionChanged()
             return
         }
+        if (id == A_MORE) { showSelectionMore(anchor); return } // keeps the selection until an item is picked
         val sel = selected()
         finishSelection()
         if (sel.isEmpty() || id == A_CLOSE) return
@@ -606,6 +608,65 @@ class MainActivity : Activity() {
             A_SHARE -> Openers.share(this, sel.map { it.file })
             A_OPEN_WITH -> Openers.chooser(this, sel[0].file)
             A_INFO -> showInfo(sel[0].file)
+        }
+    }
+
+    private fun showSelectionMore(anchor: View) {
+        val sel = selected()
+        if (sel.isEmpty()) return
+        val p = PopupMenu(this, anchor)
+        p.menu.add(0, A_ZIP, 0, R.string.zip_compress)
+        if (sel.size == 1 && !sel[0].isDir && sel[0].ext in ZipOps.EXTRACTABLE) p.menu.add(0, A_UNZIP, 1, R.string.zip_extract)
+        p.setOnMenuItemClickListener { item ->
+            finishSelection()
+            when (item.itemId) {
+                A_ZIP -> compress(sel.map { it.file })
+                A_UNZIP -> extract(sel[0].file)
+            }
+            true
+        }
+        p.show()
+    }
+
+    // ---------------------------------------------------------------- zip / unzip
+
+    /** Asks for the archive name (one item: its name; several: the folder's), then packs into the current folder. */
+    private fun compress(files: List<File>) {
+        val dir = cwd
+        val one = files.singleOrNull()
+        val base = when {
+            one == null -> dir.name.ifEmpty { "archive" }
+            one.isDirectory -> one.name
+            else -> one.name.substringBeforeLast('.').ifEmpty { one.name }
+        }
+        prompt(R.string.zip_compress, FileOps.unique(dir, "$base.zip").name) { input ->
+            val name = if (input.endsWith(".zip", ignoreCase = true)) input else "$input.zip"
+            val out = File(dir, name)
+            when {
+                !FileOps.validName(name) -> toast(R.string.bad_name)
+                FileOps.existsNoFollow(out) -> toast(R.string.exists)
+                else -> runOp { ZipOps.zip(files, out) }
+            }
+        }
+    }
+
+    /** Extracts into a new folder named after the archive, next to it ("a.zip" -> "a", or "a (1)" if taken). */
+    private fun extract(zip: File) {
+        val parent = zip.parentFile ?: return
+        val dest = FileOps.unique(parent, zip.name.substringBeforeLast('.').ifEmpty { zip.name })
+        runOp {
+            try {
+                try {
+                    ZipOps.unzip(zip, dest)
+                } catch (e: Exception) {
+                    // Names that aren't UTF-8 (old Windows zips) throw before anything is written: retry as CP437.
+                    if (Build.VERSION.SDK_INT < 24 || e !is IllegalArgumentException && e !is java.util.zip.ZipException) throw e
+                    ZipOps.unzip(zip, dest, charset("IBM437"))
+                }
+            } finally {
+                // Nothing usable came out (empty, unreadable or failed archive): don't leave an empty folder behind.
+                if (dest.list()?.isEmpty() == true) dest.delete()
+            }
         }
     }
 
@@ -753,5 +814,8 @@ class MainActivity : Activity() {
         const val A_OPEN_WITH = 7
         const val A_INFO = 8
         const val A_CLOSE = 9
+        const val A_MORE = 10
+        const val A_ZIP = 11
+        const val A_UNZIP = 12
     }
 }

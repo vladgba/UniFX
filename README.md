@@ -17,6 +17,7 @@ UniFX has **zero library dependencies**. It uses only the Android framework and 
 - Show/hide hidden files, and filter the current folder by name
 - Storage shortcuts: internal storage, SD cards / USB drives, the app's own files, and `/`
 - Long-press to multi-select: copy, cut, paste, delete, rename, share, open with…, properties
+- Zip: compress the selection to a `.zip` (⋮ → Compress to ZIP), and extract `.zip` / `.jar` / `.aar` / `.apk` / `.epub` archives into a new folder next to them (⋮ → Extract here). Entries that would land outside that folder ("zip slip") are refused; old Windows archives with non-UTF-8 names are read as CP437 on Android 7+
 - Copy and move run in the background. Name clashes become `name (1).ext`, and delete never follows symlinks
 - Files are shared with other apps through a small built-in content provider (no AndroidX `FileProvider`)
 
@@ -59,6 +60,7 @@ Requirements: JDK 17+ and the Android SDK (platform 35).
 ```sh
 ./gradlew assembleDebug     # app/build/outputs/apk/debug/
 ./gradlew assembleRelease   # app/build/outputs/apk/release/
+./gradlew testDebugUnitTest # JVM unit tests (JUnit is test-only; the APK has no dependencies)
 ```
 
 Or open the project in Android Studio / IntelliJ IDEA and run it.

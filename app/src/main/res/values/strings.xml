@@ -151,5 +151,9 @@
     <string name="prop_modified">Modified</string>
     <string name="prop_access">Access</string>
     <string name="prop_symlink">%1$s (symlink → %2$s)</string>
+
+    <!-- Zip -->
+    <string name="zip_compress">Compress to ZIP</string>
+    <string name="zip_extract">Extract here</string>
     <string name="saving">Saving…</string>
 </resources>

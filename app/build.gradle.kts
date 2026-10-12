@@ -53,4 +53,7 @@ kotlin {
     }
 }
 
-// No dependencies: Android framework + Kotlin stdlib only.
+// No runtime dependencies: Android framework + Kotlin stdlib only. JUnit is for JVM unit tests and never ships.
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}

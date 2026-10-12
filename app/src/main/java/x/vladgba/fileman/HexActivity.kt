@@ -69,8 +69,17 @@ class HexDoc(val file: File) : Closeable {
     private fun load(p: Long): ByteArray {
         val start = p shl PAGE_BITS
         val b = ByteArray(min(PAGE.toLong(), size - start).toInt().coerceAtLeast(0))
-        raf.seek(start)
-        raf.readFully(b)
+        try {
+            // A file truncated since it was opened reads short: leave the rest zero instead of crashing the UI.
+            raf.seek(start)
+            var n = 0
+            while (n < b.size) {
+                val r = raf.read(b, n, b.size - n)
+                if (r < 0) break
+                n += r
+            }
+        } catch (e: IOException) {
+        }
         pages[p] = b
         return b
     }

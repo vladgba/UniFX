@@ -1,5 +1,6 @@
 package x.vladgba.fileman
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -69,6 +70,7 @@ class FileAdapter(private val ctx: Context) : BaseAdapter() {
         return row
     }
 
+    @SuppressLint("ResourceType") // obtainStyledAttributes index, not a resource id
     private class Cell(ctx: Context) : LinearLayout(ctx) {
         val badge = Badge(ctx)
         val name = TextView(ctx)
@@ -104,6 +106,7 @@ class FileAdapter(private val ctx: Context) : BaseAdapter() {
         }
     }
 
+    @SuppressLint("ResourceType") // obtainStyledAttributes index, not a resource id
     private class Row(ctx: Context) : LinearLayout(ctx) {
         val badge = Badge(ctx)
         val name = TextView(ctx)

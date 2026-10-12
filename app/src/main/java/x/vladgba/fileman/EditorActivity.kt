@@ -63,6 +63,8 @@ class EditorActivity : Activity() {
     private var loaded = false
     private var dirty = false
         set(v) { if (field != v) { field = v; updateTitle(); refreshHeader() } }
+    private var revision = 0 // bumped on every edit, so a save only clears [dirty] if nothing changed meanwhile
+    private var saving = false
     private var fontSp = 14f
     private var wrap = false
     private var highlightOn = true
@@ -285,7 +287,7 @@ class EditorActivity : Activity() {
         edit.setText(text)
         edit.isEnabled = true
         edit.setSelection(0)
-        history = History(edit) { dirty = true; refreshHeader() }
+        history = History(edit) { revision++; dirty = true; refreshHeader() }
         edit.addTextChangedListener(history)
         if (highlightOn) setHighlight(true)
         loaded = true
@@ -323,21 +325,29 @@ class EditorActivity : Activity() {
         }
     }
 
-    private fun encode(): ByteArray {
-        var s = edit.text.toString()
+    private fun encode(text: String): ByteArray {
+        var s = text
         if (crlf) s = s.replace("\n", "\r\n")
         val body = s.toByteArray(charset)
         return if (bom) byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + body else body
     }
 
     private fun save(then: (() -> Unit)? = null) {
-        if (!loaded) return
-        val bytes = encode()
+        if (!loaded || saving) return
+        val text = edit.text.toString()
+        val bytes = encode(text)
+        val rev = revision
+        saving = true
         Thread {
             // Cached copy of another app's file: also write back to the original URI.
             val ok = FileOps.writeAtomic(file, bytes) && Openers.writeBack(this, file)
             ui.post {
-                if (ok) { dirty = false; toast(R.string.saved); then?.invoke() } else toast(R.string.failed)
+                saving = false
+                if (isDestroyed) return@post
+                if (!ok) { toast(R.string.failed); return@post }
+                if (revision == rev) dirty = false // edited during the save: still unsaved
+                toast(R.string.saved)
+                then?.invoke()
             }
         }.start()
     }

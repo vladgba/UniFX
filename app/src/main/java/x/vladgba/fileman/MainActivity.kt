@@ -456,6 +456,7 @@ class MainActivity : Activity() {
     }
 
     private fun load() {
+        if (isDestroyed || loader.isShutdown) return
         val dir = cwd
         val token = ++loadToken
         val hidden = showHidden
@@ -490,7 +491,8 @@ class MainActivity : Activity() {
             SORT_TYPE -> compareBy(String.CASE_INSENSITIVE_ORDER) { e: Entry -> e.ext }.then(byName)
             else -> byName
         }
-        if (sortDesc) c = c.reversed()
+        // Not c.reversed(): that's Java 8's Comparator default method, missing below API 24 (minSdk is 21).
+        if (sortDesc) c = java.util.Collections.reverseOrder(c)
         return compareBy<Entry> { !it.isDir }.then(c) // folders always on top
     }
 
@@ -651,7 +653,7 @@ class MainActivity : Activity() {
         val src = clip
         val move = clipMove
         val dest = cwd
-        if (src.any { it.isDirectory && (dest.path + "/").startsWith(it.path + "/") }) {
+        if (src.any { FileOps.isInside(dest, it) }) {
             toast(R.string.into_itself)
             return
         }
@@ -665,8 +667,9 @@ class MainActivity : Activity() {
         worker.execute {
             val failed = try { op() } catch (e: Exception) { -1 }
             ui.post {
+                // isFinishing is false when the activity is recreated (e.g. dark mode switch); isDestroyed isn't.
+                if (isFinishing || isDestroyed) return@post
                 busy(false)
-                if (isFinishing) return@post
                 when {
                     failed < 0 -> toast(R.string.failed)
                     failed > 0 -> toast(getString(R.string.partly_failed, failed))
@@ -692,8 +695,9 @@ class MainActivity : Activity() {
                 if (FileOps.isLink(f)) append("  (symlink → ").append(f.canonicalPath).append(")")
             }
             ui.post {
+                if (isFinishing || isDestroyed) return@post
                 busy(false)
-                if (!isFinishing) AlertDialog.Builder(this).setTitle(f.name).setMessage(text)
+                AlertDialog.Builder(this).setTitle(f.name).setMessage(text)
                     .setPositiveButton(android.R.string.ok, null).show()
             }
         }

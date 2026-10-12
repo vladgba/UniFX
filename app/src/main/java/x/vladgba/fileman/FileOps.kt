@@ -9,8 +9,10 @@ object FileOps {
 
     fun transfer(src: List<File>, destDir: File, move: Boolean): Int {
         var failed = 0
+        val destCanon = canon(destDir)
         for (f in src) {
-            if (move && f.parentFile == destDir) continue // cut + paste in place: nothing to do
+            if (move && f.parentFile?.let(::canon) == destCanon) continue // cut + paste in place: nothing to do
+            if (isInside(destDir, f)) { failed++; continue } // a folder into itself would recurse until MAX_DEPTH
             val target = unique(destDir, f.name)
             val ok = if (move) {
                 f.renameTo(target) || (copy(f, target, 0) && delete(f))
@@ -63,6 +65,14 @@ object FileOps {
         return f
     }
 
+    private fun canon(f: File): String = try { f.canonicalPath } catch (e: IOException) { f.absolutePath }
+
+    /** True if [dir] is [f] itself or lies inside it, resolving symlinks (/sdcard vs /storage/emulated/0). */
+    fun isInside(dir: File, f: File): Boolean {
+        if (!f.isDirectory) return false
+        return (canon(dir) + "/").startsWith(canon(f) + "/")
+    }
+
     fun isLink(f: File): Boolean = try {
         val parent = f.parentFile?.canonicalFile ?: return false
         File(parent, f.name).canonicalPath != File(parent, f.name).absolutePath
@@ -82,11 +92,16 @@ object FileOps {
         return out
     }
 
-    /** Write via a temp file + rename so a crash never leaves a half-written file; falls back to a direct write. */
-    fun writeAtomic(f: File, bytes: ByteArray): Boolean = try {
+    /**
+     * Write via a temp file + rename so a crash never leaves a half-written file; falls back to a direct write.
+     * A symlink is resolved first so the link itself survives, and the executable bit is carried over.
+     */
+    fun writeAtomic(file: File, bytes: ByteArray): Boolean = try {
+        val f = try { file.canonicalFile } catch (e: IOException) { file }
         val tmp = File(f.parentFile, "." + f.name + ".unifx~")
         try {
             tmp.writeBytes(bytes)
+            if (f.canExecute()) tmp.setExecutable(true, false)
             if (!tmp.renameTo(f)) throw IOException("rename failed")
         } catch (e: IOException) {
             tmp.delete()

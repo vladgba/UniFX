@@ -76,17 +76,30 @@ class ByteSource(file: File) : Closeable {
     private fun load(p: Long): ByteArray {
         val start = p shl PAGE_BITS
         val b = ByteArray(min(PAGE.toLong(), size - start).toInt())
-        raf.seek(start)
-        raf.readFully(b)
+        readAt(start, b)
         pages[p] = b
         return b
     }
 
     fun read(start: Long, end: Long): ByteArray {
         val b = ByteArray((end - start).toInt())
-        raf.seek(start)
-        raf.readFully(b)
+        readAt(start, b)
         return b
+    }
+
+    /** Reads as much as is there; a file truncated since it was opened leaves the rest zero instead of throwing. */
+    private fun readAt(pos: Long, b: ByteArray) {
+        try {
+            raf.seek(pos)
+            var n = 0
+            while (n < b.size) {
+                val r = raf.read(b, n, b.size - n)
+                if (r < 0) break
+                n += r
+            }
+        } catch (e: IOException) {
+            // leave zeros
+        }
     }
 
     override fun close() = raf.close()

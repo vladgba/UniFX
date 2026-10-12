@@ -94,6 +94,12 @@ class MainActivity : Activity() {
         roots = Storage.roots(this)
         val start = state?.getString("cwd") ?: prefs.getString("cwd", null)
         cwd = start?.let(::File)?.takeIf { it.isDirectory } ?: Storage.primary()
+        // Copy/cut list survives the activity being rebuilt (theme switch, process death while in background).
+        state?.getStringArrayList("clip")?.let { paths ->
+            clip = paths.map(::File)
+            clipMove = state.getBoolean("clipMove")
+            refreshBar()
+        }
     }
 
     override fun onResume() {
@@ -112,6 +118,8 @@ class MainActivity : Activity() {
     override fun onSaveInstanceState(out: Bundle) {
         super.onSaveInstanceState(out)
         out.putString("cwd", cwd.path)
+        out.putStringArrayList("clip", ArrayList(clip.map { it.path }))
+        out.putBoolean("clipMove", clipMove)
     }
 
     override fun onDestroy() {

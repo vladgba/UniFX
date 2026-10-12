@@ -152,6 +152,30 @@
     <string name="prop_access">Access</string>
     <string name="prop_symlink">%1$s (symlink → %2$s)</string>
 
+    <!-- Rename by pattern -->
+    <string name="rename_by_pattern">Rename by pattern…</string>
+    <plurals name="rename_title">
+        <item quantity="one">Rename %d item</item>
+        <item quantity="other">Rename %d items</item>
+    </plurals>
+    <string name="rename_find">Find, e.g. *.jpeg</string>
+    <string name="rename_replace">Replace with, e.g. *.jpg</string>
+    <string name="rename_regex">Regular expression</string>
+    <string name="match_case">Match case</string>
+    <string name="rename_help_wildcard">Find must match the whole name: * is any text, ? one character. In Replace, each * or ? puts back what it matched. [N] numbers the files 1, 2, 3; [NNN] gives 001.</string>
+    <string name="rename_help_regex">Java regex, replaced everywhere it matches; $1, $2 insert groups. [N] numbers the files 1, 2, 3; [NNN] gives 001.</string>
+    <string name="rename_bad_pattern">Invalid pattern: %s</string>
+    <plurals name="rename_count">
+        <item quantity="one">%d will be renamed</item>
+        <item quantity="other">%d will be renamed</item>
+    </plurals>
+    <plurals name="rename_problems">
+        <item quantity="one">%d problem, skipped</item>
+        <item quantity="other">%d problems, skipped</item>
+    </plurals>
+    <string name="rename_invalid">invalid name</string>
+    <string name="rename_duplicate">same name twice</string>
+
     <!-- Zip -->
     <string name="zip_compress">Compress to ZIP</string>
     <string name="zip_extract">Extract here</string>

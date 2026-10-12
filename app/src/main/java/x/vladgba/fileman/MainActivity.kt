@@ -615,17 +615,29 @@ class MainActivity : Activity() {
         val sel = selected()
         if (sel.isEmpty()) return
         val p = PopupMenu(this, anchor)
-        p.menu.add(0, A_ZIP, 0, R.string.zip_compress)
-        if (sel.size == 1 && !sel[0].isDir && sel[0].ext in ZipOps.EXTRACTABLE) p.menu.add(0, A_UNZIP, 1, R.string.zip_extract)
+        p.menu.add(0, A_BATCH_RENAME, 0, R.string.rename_by_pattern)
+        p.menu.add(0, A_ZIP, 1, R.string.zip_compress)
+        if (sel.size == 1 && !sel[0].isDir && sel[0].ext in ZipOps.EXTRACTABLE) p.menu.add(0, A_UNZIP, 2, R.string.zip_extract)
         p.setOnMenuItemClickListener { item ->
             finishSelection()
             when (item.itemId) {
+                A_BATCH_RENAME -> batchRename(sel.map { it.file })
                 A_ZIP -> compress(sel.map { it.file })
                 A_UNZIP -> extract(sel[0].file)
             }
             true
         }
         p.show()
+    }
+
+    /** Rename by pattern (wildcard or regex, with a counter); see [RenameOps]. */
+    private fun batchRename(files: List<File>) {
+        BatchRenameDialog.show(this, files) { plan ->
+            // Renamed files would no longer be found at their old paths when pasting.
+            val moved = plan.renames.map { it.file }.toSet()
+            if (clip.any { it in moved }) { clip = clip - moved; refreshBar() }
+            runOp { RenameOps.apply(plan) }
+        }
     }
 
     // ---------------------------------------------------------------- zip / unzip
@@ -817,5 +829,6 @@ class MainActivity : Activity() {
         const val A_MORE = 10
         const val A_ZIP = 11
         const val A_UNZIP = 12
+        const val A_BATCH_RENAME = 13
     }
 }

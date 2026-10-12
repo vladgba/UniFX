@@ -63,7 +63,7 @@ class EditorActivity : Activity() {
     private var loaded = false
     private var dirty = false
         set(v) { if (field != v) { field = v; updateTitle(); refreshHeader() } }
-    private var revision = 0 // bumped on every edit, so a save only clears [dirty] if nothing changed meanwhile
+    private var savedState = 0L // History.state of the text on disk; 0 is the text as loaded
     private var saving = false
     private var fontSp = 14f
     private var wrap = false
@@ -287,7 +287,8 @@ class EditorActivity : Activity() {
         edit.setText(text)
         edit.isEnabled = true
         edit.setSelection(0)
-        history = History(edit) { revision++; dirty = true; refreshHeader() }
+        // Dirty means "differs from what's on disk", so undoing back to the saved text clears the marker.
+        history = History(edit) { dirty = history.state != savedState; refreshHeader() }
         edit.addTextChangedListener(history)
         if (highlightOn) setHighlight(true)
         loaded = true
@@ -342,7 +343,8 @@ class EditorActivity : Activity() {
             return
         }
         val bytes = encode(text)
-        val rev = revision
+        val state = history.state
+        history.barrier = state // typing after this point must not merge into the saved step
         saving = true
         Thread {
             // Cached copy of another app's file: also write back to the original URI.
@@ -351,7 +353,8 @@ class EditorActivity : Activity() {
                 saving = false
                 if (isDestroyed) return@post
                 if (!ok) { toast(R.string.failed); return@post }
-                if (revision == rev) dirty = false // edited during the save: still unsaved
+                savedState = state
+                dirty = history.state != savedState // edited during the save: still unsaved
                 toast(R.string.saved)
                 then?.invoke()
             }
@@ -542,12 +545,20 @@ class EditorActivity : Activity() {
 
     /** Undo/redo over raw text edits; consecutive single-character typing merges into one step. */
     private class History(private val et: EditText, private val onEdit: () -> Unit) : TextWatcher {
-        private class Op(val start: Int, val before: String, val after: String)
+        /** [id] names the text state right after this op, so equal ids mean equal text. */
+        private class Op(val start: Int, val before: String, val after: String, val id: Long)
 
         private val undo = ArrayDeque<Op>()
         private val redo = ArrayDeque<Op>()
         private var muted = false
         private var pending = ""
+        private var nextId = 1L
+
+        /** The current text state: the id of the newest applied op, or 0 for the text as loaded. */
+        val state: Long get() = undo.lastOrNull()?.id ?: 0L
+
+        /** Op id that typing must not merge into (the saved state), so undo can always land on it exactly. */
+        var barrier = -1L
 
         val canUndo get() = undo.isNotEmpty()
         val canRedo get() = redo.isNotEmpty()
@@ -561,11 +572,11 @@ class EditorActivity : Activity() {
             val after = s.subSequence(start, start + count).toString()
             val last = undo.lastOrNull()
             if (last != null && pending.isEmpty() && last.before.isEmpty() && count == 1 && after != "\n" &&
-                last.start + last.after.length == start && last.after.length < 64
+                last.start + last.after.length == start && last.after.length < 64 && last.id != barrier
             ) {
-                undo[undo.lastIndex] = Op(last.start, "", last.after + after)
+                undo[undo.lastIndex] = Op(last.start, "", last.after + after, nextId++)
             } else {
-                undo.addLast(Op(start, pending, after))
+                undo.addLast(Op(start, pending, after, nextId++))
                 if (undo.size > LIMIT) undo.removeFirst()
             }
             redo.clear()

@@ -249,18 +249,8 @@ class ZipActivity : Activity() {
         }
     }
 
-    private fun installApk() {
-        val uri = FilesProvider.uri(this, file)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        try {
-            startActivity(intent)
-        } catch (_: Exception) {
-            Toast.makeText(this, R.string.failed, Toast.LENGTH_SHORT).show()
-        }
+    private fun installApk(targetFile: File = file) {
+        Openers.install(this, targetFile)
     }
 
     private fun updateSubtitle() {
@@ -368,7 +358,6 @@ class ZipActivity : Activity() {
         Thread {
             val ok = try {
                 ArchiveOps.extractEntry(file, entry.path, target)
-                target.setReadOnly()
                 true
             } catch (_: Exception) {
                 target.delete()
@@ -389,18 +378,52 @@ class ZipActivity : Activity() {
 
     private fun showEntryMenu(anchor: View, entry: ZipOps.EntryInfo) {
         val p = PopupMenu(this, anchor)
-        p.menu.add(0, 1, 0, R.string.zip_extract_item)
-        p.menu.add(0, 2, 1, R.string.properties)
-        if (!entry.isDir) p.menu.add(0, 3, 2, R.string.open_with)
+        if (!entry.isDir && ArchiveOps.isApk(File(entry.name))) {
+            p.menu.add(0, 4, 0, R.string.install)
+        }
+        p.menu.add(0, 1, 1, R.string.zip_extract_item)
+        p.menu.add(0, 2, 2, R.string.properties)
+        if (!entry.isDir) p.menu.add(0, 3, 3, R.string.open_with)
         p.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> extractEntryToDisk(entry)
                 2 -> showEntryProperties(entry)
                 3 -> openEntryWith(entry)
+                4 -> installEntry(entry)
             }
             true
         }
         p.show()
+    }
+
+    private fun installEntry(entry: ZipOps.EntryInfo) {
+        val tempDir = File(cacheDir, "preview/${file.name}")
+        val target = File(tempDir, entry.path)
+        if (target.exists()) {
+            installApk(target)
+            return
+        }
+
+        progress.visibility = View.VISIBLE
+        Thread {
+            val ok = try {
+                ArchiveOps.extractEntry(file, entry.path, target)
+                true
+            } catch (_: Exception) {
+                target.delete()
+                false
+            }
+
+            ui.post {
+                if (isFinishing) return@post
+                progress.visibility = View.GONE
+                if (!ok) {
+                    Toast.makeText(this, R.string.cannot_open, Toast.LENGTH_SHORT).show()
+                } else {
+                    installApk(target)
+                }
+            }
+        }.start()
     }
 
     private fun openEntryWith(entry: ZipOps.EntryInfo) {
@@ -415,7 +438,6 @@ class ZipActivity : Activity() {
         Thread {
             val ok = try {
                 ArchiveOps.extractEntry(file, entry.path, target)
-                target.setReadOnly()
                 true
             } catch (_: Exception) {
                 target.delete()

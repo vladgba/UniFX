@@ -206,5 +206,6 @@
     <string name="zip_empty">Empty archive</string>
     <string name="zip_extracting">Extracting…</string>
     <string name="install">Install</string>
+    <string name="install_permission_prompt">Allow UniFX to install apps</string>
     <string name="saving">Saving…</string>
 </resources>

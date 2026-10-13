@@ -7,7 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Process
+import android.provider.Settings
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import java.io.File
@@ -104,10 +106,52 @@ object Openers {
      * file, and since we hold all-files access, a write grant would let any picked app rewrite anything we pass.
      */
     fun external(a: Activity, f: File, chooser: Boolean): Boolean {
+        if (ArchiveOps.isApk(f)) {
+            install(a, f)
+            return true
+        }
         val view = Intent(Intent.ACTION_VIEW)
             .setDataAndType(FilesProvider.uri(a, f), mime(f))
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         return start(a, if (chooser) Intent.createChooser(view, f.name) else view)
+    }
+
+    /** Dispatches APK installation via system package installer, prompting for unknown sources if needed. */
+    fun install(a: Activity, f: File) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!a.packageManager.canRequestPackageInstalls()) {
+                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:${a.packageName}")
+                }
+                try {
+                    a.startActivity(intent)
+                    Toast.makeText(a, R.string.install_permission_prompt, Toast.LENGTH_LONG).show()
+                } catch (_: Exception) {
+                    try {
+                        a.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+                        Toast.makeText(a, R.string.install_permission_prompt, Toast.LENGTH_LONG).show()
+                    } catch (_: Exception) {
+                        Toast.makeText(a, R.string.failed, Toast.LENGTH_SHORT).show()
+                    }
+                }
+                return
+            }
+        }
+        val uri = FilesProvider.uri(a, f)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val res = a.packageManager.queryIntentActivities(intent, 0)
+        for (r in res) {
+            a.grantUriPermission(r.activityInfo.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            a.startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(a, R.string.failed, Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun share(a: Activity, files: List<File>) {
@@ -133,6 +177,7 @@ object Openers {
 
     fun mime(f: File): String {
         val ext = f.name.substringAfterLast('.', "").lowercase()
+        if (ext == "apk") return "application/vnd.android.package-archive"
         return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
             ?: if (Syntax.isText(f)) "text/plain" else "*/*"
     }

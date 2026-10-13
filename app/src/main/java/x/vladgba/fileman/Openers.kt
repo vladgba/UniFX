@@ -3,6 +3,7 @@ package x.vladgba.fileman
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -116,8 +117,22 @@ object Openers {
         return start(a, if (chooser) Intent.createChooser(view, f.name) else view)
     }
 
+    private val INSTALLER_PACKAGES = listOf(
+        "com.google.android.packageinstaller",
+        "com.android.packageinstaller",
+        "com.samsung.android.packageinstaller",
+        "com.miui.packageinstaller",
+        "com.coloros.packageinstaller",
+        "com.oppo.packageinstaller",
+        "com.vivo.abe"
+    )
+
     /** Dispatches APK installation via system package installer, prompting for unknown sources if needed. */
     fun install(a: Activity, f: File) {
+        if (!f.exists() || f.length() == 0L) {
+            Toast.makeText(a, R.string.cannot_open, Toast.LENGTH_SHORT).show()
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!a.packageManager.canRequestPackageInstalls()) {
                 val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
@@ -137,20 +152,92 @@ object Openers {
                 return
             }
         }
+        f.setReadable(true, false)
         val uri = FilesProvider.uri(a, f)
+
+        // Blanket grant URI permissions to all known system package installer packages
+        for (pkg in INSTALLER_PACKAGES) {
+            try {
+                a.grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {}
+        }
+
+        // Grant to all matching handlers for ACTION_VIEW and ACTION_INSTALL_PACKAGE
+        val viewQuery = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addCategory(Intent.CATEGORY_DEFAULT)
+        }
+        val viewActivities = try {
+            a.packageManager.queryIntentActivities(viewQuery, 0)
+        } catch (_: Exception) {
+            emptyList()
+        }
+        for (r in viewActivities) {
+            try {
+                a.grantUriPermission(r.activityInfo.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {}
+        }
+
+        @Suppress("DEPRECATION")
+        val installQuery = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addCategory(Intent.CATEGORY_DEFAULT)
+        }
+        val installActivities = try {
+            a.packageManager.queryIntentActivities(installQuery, 0)
+        } catch (_: Exception) {
+            emptyList()
+        }
+        for (r in installActivities) {
+            try {
+                a.grantUriPermission(r.activityInfo.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {}
+        }
+
+        // Resolve preferred system package installer
+        val pm = a.packageManager
+        var targetPkg: String? = null
+        for (pkg in INSTALLER_PACKAGES) {
+            try {
+                if (Build.VERSION.SDK_INT >= 33) {
+                    pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0))
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.getPackageInfo(pkg, 0)
+                }
+                targetPkg = pkg
+                break
+            } catch (_: Exception) {}
+        }
+        if (targetPkg == null) {
+            targetPkg = installActivities.firstOrNull { it.activityInfo.packageName != "android" }?.activityInfo?.packageName
+                ?: viewActivities.firstOrNull { it.activityInfo.packageName != "android" }?.activityInfo?.packageName
+        }
+
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
+            clipData = ClipData.newRawUri(null, uri)
+            addCategory(Intent.CATEGORY_DEFAULT)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            putExtra("android.intent.extra.NOT_UNKNOWN_SOURCE", true)
+            if (targetPkg != null) setPackage(targetPkg)
         }
-        val res = a.packageManager.queryIntentActivities(intent, 0)
-        for (r in res) {
-            a.grantUriPermission(r.activityInfo.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
+
         try {
             a.startActivity(intent)
         } catch (_: Exception) {
-            Toast.makeText(a, R.string.failed, Toast.LENGTH_SHORT).show()
+            if (targetPkg != null) {
+                try {
+                    intent.setPackage(null)
+                    a.startActivity(intent)
+                } catch (_: Exception) {
+                    Toast.makeText(a, R.string.failed, Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(a, R.string.failed, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 

@@ -3,9 +3,11 @@ package x.vladgba.fileman
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.Context
+import android.content.res.AssetFileDescriptor
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import java.io.File
@@ -22,12 +24,15 @@ class FilesProvider : ContentProvider() {
 
     override fun query(uri: Uri, projection: Array<String>?, sel: String?, args: Array<String>?, sort: String?): Cursor {
         val f = file(uri)
+        val defaultCols = arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)
+        val reqCols = projection ?: defaultCols
         val cols = ArrayList<String>()
         val vals = ArrayList<Any?>()
-        for (c in projection ?: arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)) {
+        for (c in reqCols) {
             when (c) {
                 OpenableColumns.DISPLAY_NAME -> { cols += c; vals += f.name }
                 OpenableColumns.SIZE -> { cols += c; vals += f.length() }
+                "_data" -> { cols += c; vals += f.absolutePath }
             }
         }
         return MatrixCursor(cols.toTypedArray(), 1).apply { addRow(vals.toTypedArray()) }
@@ -37,6 +42,15 @@ class FilesProvider : ContentProvider() {
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor =
         ParcelFileDescriptor.open(file(uri), ParcelFileDescriptor.parseMode(mode))
+
+    override fun openAssetFile(uri: Uri, mode: String): AssetFileDescriptor? {
+        val f = file(uri)
+        val pfd = openFile(uri, mode)
+        return AssetFileDescriptor(pfd, 0, f.length())
+    }
+
+    override fun openTypedAssetFile(uri: Uri, mimeTypeFilter: String, opts: Bundle?): AssetFileDescriptor? =
+        openAssetFile(uri, "r")
 
     override fun insert(uri: Uri, values: ContentValues?): Uri? = throw UnsupportedOperationException()
     override fun delete(uri: Uri, sel: String?, args: Array<String>?) = 0

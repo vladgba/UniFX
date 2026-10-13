@@ -250,6 +250,7 @@ class ZipActivity : Activity() {
     }
 
     private fun installApk(targetFile: File = file) {
+        targetFile.setReadable(true, false)
         Openers.install(this, targetFile)
     }
 
@@ -358,6 +359,7 @@ class ZipActivity : Activity() {
         Thread {
             val ok = try {
                 ArchiveOps.extractEntry(file, entry.path, target)
+                target.setReadable(true, false)
                 true
             } catch (_: Exception) {
                 target.delete()
@@ -408,6 +410,7 @@ class ZipActivity : Activity() {
         Thread {
             val ok = try {
                 ArchiveOps.extractEntry(file, entry.path, target)
+                target.setReadable(true, false)
                 true
             } catch (_: Exception) {
                 target.delete()

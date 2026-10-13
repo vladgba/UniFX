@@ -19,7 +19,7 @@ UniFX has **zero library dependencies**. It uses only the Android framework and 
 - Storage shortcuts: internal storage, SD cards / USB drives, the app's own files, and `/`
 - Long-press to multi-select: copy, cut, paste, delete, rename, share, open with…, properties
 - Rename by pattern (⋮ → Rename by pattern…): wildcard (`*.jpeg` → `*.jpg`, `IMG_*` → `Photo *`) or Java regex with `$1` groups, optional match case, and a `[N]` / `[NNN]` counter. A live preview marks invalid names and clashes, which are skipped; renames go through temporary names, so swaps work
-- Zip: compress the selection to a `.zip` (⋮ → Compress to ZIP), and extract `.zip` / `.jar` / `.aar` / `.apk` / `.epub` archives into a new folder next to them (⋮ → Extract here). Entries that would land outside that folder ("zip slip") are refused; old Windows archives with non-UTF-8 names are read as CP437 on Android 7+
+- Archives: browse and preview `.zip`, `.jar`, `.aar`, `.apk`, `.epub`, `.tar`, `.tgz`, `.tar.gz`, and `.gz` archives without extracting (tap to view, or ⋮ → Archive preview). For APK files, displays app icon, label, package id, version, and an Install button. Compress selection to `.zip` (⋮ → Compress to ZIP), and extract archives into a folder next to them (⋮ → Extract here). Entries resolving outside ("zip/tar slip") are refused; non-UTF-8 zip names are retried as CP437 on Android 7+
 - Copy and move run in the background. Name clashes become `name (1).ext`, and delete never follows symlinks
 - Files are shared with other apps through a small built-in content provider (no AndroidX `FileProvider`)
 
@@ -97,6 +97,10 @@ app/src/main/java/x/vladgba/fileman/
 ├── Syntax.kt            languages, line tokenizer, colour palettes
 ├── ViewerActivity.kt    read-only paged text viewer (ByteSource, LineIndex)
 ├── HexActivity.kt       hex editor (HexDoc paged document)
+├── ZipActivity.kt       archive previewer (ZipTree, virtual folders, APK banner)
+├── ZipOps.kt            zip compress / extract / tree inspection
+├── TarOps.kt            tar / tgz / gz archive parser and extraction
+├── ArchiveOps.kt        unified archive gateway (.zip, .apk, .tar, .tgz, .gz)
 ├── Fonts.kt             runtime selection of a truly monospace font
 └── Ui.kt                small shared UI helpers (dp, insets, dialogs)
 ```
@@ -113,7 +117,7 @@ interface FileOpener {
 }
 ```
 
-Current modules: `TextModule` (text editor; large or read-only files are routed to the viewer), `ViewerModule` (read-only text viewer) and `HexModule` (hex editor). To add one, implement `FileOpener`, add its activity to the manifest and append it to `Openers.modules`.
+Current modules: `TextModule` (text editor; large or read-only files are routed to the viewer), `ViewerModule` (read-only text viewer), `HexModule` (hex editor) and `ZipModule` (archive previewer). To add one, implement `FileOpener`, add its activity to the manifest and append it to `Openers.modules`.
 
 ## Licence
 

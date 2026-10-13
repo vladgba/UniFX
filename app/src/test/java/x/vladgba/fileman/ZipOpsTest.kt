@@ -3,6 +3,7 @@ package x.vladgba.fileman
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -117,5 +118,71 @@ class ZipOpsTest {
         } catch (e: IOException) {
             // expected
         }
+    }
+
+    @Test fun readTreeBuildsVirtualDirectoryHierarchyAndSorts() {
+        val zip = rawZip(
+            "b_file.txt" to "beta",
+            "a_folder/sub/deep.txt" to "deep content",
+            "a_folder/readme.txt" to "read this",
+            "c_folder/" to "",
+            "a_folder/sub/" to "",
+            "../slip.txt" to "bad"
+        )
+        val tree = ZipOps.readTree(zip)
+        assertEquals(3, tree.totalFiles)
+        assertTrue(tree.totalDirs >= 3)
+
+        // Root listing: directories first (a_folder, c_folder), then files (b_file.txt)
+        val rootEntries = tree.list("")
+        assertEquals(3, rootEntries.size)
+        assertEquals("a_folder", rootEntries[0].name)
+        assertTrue(rootEntries[0].isDir)
+        assertEquals("c_folder", rootEntries[1].name)
+        assertTrue(rootEntries[1].isDir)
+        assertEquals("b_file.txt", rootEntries[2].name)
+        assertFalse(rootEntries[2].isDir)
+
+        // Subfolder listing
+        val aEntries = tree.list("a_folder")
+        assertEquals(2, aEntries.size)
+        assertEquals("sub", aEntries[0].name)
+        assertTrue(aEntries[0].isDir)
+        assertEquals("readme.txt", aEntries[1].name)
+        assertFalse(aEntries[1].isDir)
+
+        val subEntries = tree.list("a_folder/sub/")
+        assertEquals(1, subEntries.size)
+        assertEquals("deep.txt", subEntries[0].name)
+        assertFalse(subEntries[0].isDir)
+
+        // Find by path
+        val deep = tree.find("a_folder/sub/deep.txt")
+        assertNotNull(deep)
+        assertEquals("deep.txt", deep?.name)
+        assertEquals("txt", deep?.ext)
+        assertEquals("deep content".length.toLong(), deep?.size)
+    }
+
+    @Test fun extractEntryExtractsSingleFile() {
+        val zip = rawZip("doc.txt" to "hello world")
+        val target = File(tmp.root, "extracted/doc.txt")
+        ZipOps.extractEntry(zip, "doc.txt", target)
+        assertTrue(target.exists())
+        assertEquals("hello world", target.readText())
+    }
+
+    @Test fun extractSubtreeExtractsNestedDirectory() {
+        val zip = rawZip(
+            "root.txt" to "skip",
+            "pkg/a.txt" to "one",
+            "pkg/sub/b.txt" to "two"
+        )
+        val dest = File(tmp.root, "out_pkg")
+        val failed = ZipOps.extractSubtree(zip, "pkg", dest)
+        assertEquals(0, failed)
+        assertEquals("one", File(dest, "a.txt").readText())
+        assertEquals("two", File(dest, "sub/b.txt").readText())
+        assertFalse(File(dest, "root.txt").exists())
     }
 }

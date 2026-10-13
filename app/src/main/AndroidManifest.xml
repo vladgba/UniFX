@@ -57,6 +57,11 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize|stateHidden" />
 
+        <activity
+            android:name=".ZipActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="false" />
+
         <!-- Entry point for other apps (VIEW / EDIT / SEND with file:// or content://). No UI of its own. -->
         <activity
             android:name=".OpenActivity"

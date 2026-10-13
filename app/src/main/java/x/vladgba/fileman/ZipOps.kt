@@ -19,7 +19,182 @@ object ZipOps {
     /** Extensions offered "Extract": all of these are plain zip containers. */
     val EXTRACTABLE = setOf("zip", "jar", "aar", "apk", "epub")
 
+    /** Extensions opened by default in the archive previewer on tap. */
+    val PREVIEWABLE = setOf("zip", "jar", "aar")
+
     fun isArchive(f: File) = f.isFile && f.name.substringAfterLast('.', "").lowercase() in EXTRACTABLE
+
+    fun isPreviewable(f: File) = f.isFile && f.name.substringAfterLast('.', "").lowercase() in PREVIEWABLE
+
+    data class EntryInfo(
+        val name: String,
+        val path: String,
+        val isDir: Boolean,
+        val size: Long,
+        val compressedSize: Long,
+        val time: Long
+    ) {
+        val ext: String = if (isDir) "" else name.substringAfterLast('.', "").lowercase()
+    }
+
+    class ZipTree(
+        val totalFiles: Int,
+        val totalDirs: Int,
+        val totalUncompressedSize: Long,
+        val totalCompressedSize: Long,
+        private val childrenByDir: Map<String, List<EntryInfo>>,
+        private val entriesByPath: Map<String, EntryInfo>
+    ) {
+        fun list(dir: String): List<EntryInfo> = childrenByDir[normalizeDir(dir)] ?: emptyList()
+        fun find(path: String): EntryInfo? = entriesByPath[path.replace('\\', '/').trimStart('/')]
+    }
+
+    fun normalizeDir(d: String): String {
+        val s = d.replace('\\', '/').trimStart('/').trimEnd('/')
+        return if (s.isEmpty()) "" else "$s/"
+    }
+
+    /** Reads archive tree, retrying with IBM437 if standard UTF-8 throws on non-standard encoding. */
+    @SuppressLint("NewApi")
+    fun openTree(zip: File): ZipTree {
+        return try {
+            readTree(zip)
+        } catch (e: IllegalArgumentException) {
+            try {
+                readTree(zip, Charset.forName("IBM437"))
+            } catch (_: Throwable) {
+                throw e
+            }
+        }
+    }
+
+    /**
+     * Reads the archive structure into a [ZipTree], synthesizing intermediate directories if missing.
+     * Dangerous paths (zip slip) are skipped.
+     */
+    @SuppressLint("NewApi")
+    fun readTree(zip: File, charset: Charset? = null): ZipTree {
+        val zf = if (charset == null) ZipFile(zip) else ZipFile(zip, charset)
+        zf.use {
+            var totalFiles = 0
+            var totalDirs = 0
+            var totalUncompressed = 0L
+            var totalCompressed = 0L
+
+            val dirChildren = HashMap<String, LinkedHashMap<String, EntryInfo>>()
+            val entriesByPath = HashMap<String, EntryInfo>()
+
+            fun ensureDir(parentDir: String, dirName: String, dirPath: String, time: Long) {
+                val map = dirChildren.getOrPut(parentDir) { LinkedHashMap() }
+                val existing = map[dirName]
+                if (existing == null) {
+                    val info = EntryInfo(dirName, dirPath, true, 0L, 0L, time)
+                    map[dirName] = info
+                    entriesByPath[dirPath] = info
+                    totalDirs++
+                } else if (existing.time <= 0L && time > 0L) {
+                    val updated = existing.copy(time = time)
+                    map[dirName] = updated
+                    entriesByPath[dirPath] = updated
+                }
+            }
+
+            val entries = zf.entries().toList()
+            for (e in entries) {
+                val rawName = e.name.replace('\\', '/').trimStart('/')
+                if (rawName.isEmpty()) continue
+                val isDir = e.isDirectory || rawName.endsWith('/')
+                val cleanName = if (isDir) rawName.trimEnd('/') else rawName
+                val segments = cleanName.split('/')
+                if (segments.any { it == ".." || it == "." || it.isEmpty() }) continue
+
+                var curParent = ""
+                for (i in 0 until segments.size - 1) {
+                    val seg = segments[i]
+                    val subPath = "$curParent$seg/"
+                    ensureDir(curParent, seg, subPath, 0L)
+                    curParent = subPath
+                }
+
+                val leafName = segments.last()
+                if (isDir) {
+                    val dirPath = "$cleanName/"
+                    ensureDir(curParent, leafName, dirPath, e.time)
+                } else {
+                    val filePath = cleanName
+                    val size = e.size.coerceAtLeast(0L)
+                    val compSize = e.compressedSize.coerceAtLeast(0L)
+                    totalFiles++
+                    totalUncompressed += size
+                    if (compSize > 0) totalCompressed += compSize
+                    val info = EntryInfo(leafName, filePath, false, e.size, e.compressedSize, e.time)
+                    dirChildren.getOrPut(curParent) { LinkedHashMap() }[leafName] = info
+                    entriesByPath[filePath] = info
+                }
+            }
+
+            val comparator = compareBy<EntryInfo>({ !it.isDir }, { it.name.lowercase() }, { it.name })
+            val sortedChildren = dirChildren.mapValues { (_, children) ->
+                children.values.sortedWith(comparator)
+            }
+
+            return ZipTree(totalFiles, totalDirs, totalUncompressed, totalCompressed, sortedChildren, entriesByPath)
+        }
+    }
+
+    /** Extracts a single entry [entryPath] from [zip] into [dest]. */
+    @SuppressLint("NewApi")
+    fun extractEntry(zip: File, entryPath: String, dest: File, charset: Charset? = null) {
+        val zf = if (charset == null) ZipFile(zip) else ZipFile(zip, charset)
+        zf.use {
+            val norm = entryPath.replace('\\', '/').trimStart('/')
+            val e = zf.getEntry(norm) ?: zf.getEntry("$norm/") ?: throw IOException("Entry not found: $entryPath")
+            if (e.isDirectory) {
+                if (!dest.isDirectory && !dest.mkdirs()) throw IOException("can't create directory $dest")
+            } else {
+                val parent = dest.parentFile
+                if (parent != null && !parent.isDirectory && !parent.mkdirs()) throw IOException("can't create directory $parent")
+                zf.getInputStream(e).use { i -> dest.outputStream().use { o -> i.copyTo(o, BUFFER) } }
+                if (e.time > 0) dest.setLastModified(e.time)
+            }
+        }
+    }
+
+    /** Extracts all entries inside [subPath] from [zip] into [destDir]. */
+    @SuppressLint("NewApi")
+    fun extractSubtree(zip: File, subPath: String, destDir: File, charset: Charset? = null): Int {
+        val zf = if (charset == null) ZipFile(zip) else ZipFile(zip, charset)
+        zf.use {
+            val prefix = normalizeDir(subPath)
+            val destRoot = canon(destDir) + File.separator
+            if (!destDir.isDirectory && !destDir.mkdirs()) throw IOException("can't create $destDir")
+            var failed = 0
+            val entries = zf.entries().toList()
+            for (e in entries) {
+                val rel = e.name.replace('\\', '/').trimStart('/')
+                if (!rel.startsWith(prefix)) continue
+                val localRel = rel.removePrefix(prefix).trimStart('/')
+                if (localRel.isEmpty()) continue
+                val target = File(destDir, localRel)
+                if (!(canon(target) + File.separator).startsWith(destRoot)) { failed++; continue } // zip slip
+                try {
+                    if (e.isDirectory) {
+                        if (!(target.isDirectory || target.mkdirs())) failed++
+                        else if (e.time > 0) target.setLastModified(e.time)
+                    } else {
+                        val p = target.parentFile
+                        if (p != null && !(p.isDirectory || p.mkdirs())) { failed++; continue }
+                        zf.getInputStream(e).use { i -> target.outputStream().use { o -> i.copyTo(o, BUFFER) } }
+                        if (e.time > 0) target.setLastModified(e.time)
+                    }
+                } catch (_: IOException) {
+                    target.delete()
+                    failed++
+                }
+            }
+            return failed
+        }
+    }
 
     /**
      * Packs [files] (folders recursively, empty ones included) into [out], each under its own name at the

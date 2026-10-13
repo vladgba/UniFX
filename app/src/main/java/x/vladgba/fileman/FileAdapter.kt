@@ -145,7 +145,7 @@ class FileAdapter(private val ctx: Context) : BaseAdapter() {
     }
 
     /** Folder silhouette or a colored page with the extension on it. Drawn, not loaded: zero image assets. */
-    private class Badge(ctx: Context) : View(ctx) {
+    internal class Badge(ctx: Context) : View(ctx) {
         private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
         private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
@@ -156,12 +156,14 @@ class FileAdapter(private val ctx: Context) : BaseAdapter() {
         private var dir = false
         private var label = ""
 
-        fun set(e: Entry) {
-            dir = e.isDir
-            label = e.ext.take(4).uppercase()
-            fill.color = Kinds.color(e)
+        fun set(isDir: Boolean, ext: String) {
+            dir = isDir
+            label = ext.take(4).uppercase()
+            fill.color = Kinds.color(isDir, ext)
             invalidate()
         }
+
+        fun set(e: Entry) = set(e.isDir, e.ext)
 
         override fun onDraw(c: Canvas) {
             val w = width.toFloat()

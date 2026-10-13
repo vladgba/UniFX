@@ -25,10 +25,16 @@ interface FileOpener {
     fun open(a: Activity, f: File)
 }
 
+object ZipModule : FileOpener {
+    override val title = R.string.zip_preview
+    override fun canOpen(f: File) = ArchiveOps.isPreviewable(f)
+    override fun open(a: Activity, f: File) = Openers.launch(a, ZipActivity::class.java, f)
+}
+
 object Openers {
     const val EXTRA_PATH = "x.vladgba.fileman.PATH"
 
-    val modules: MutableList<FileOpener> = mutableListOf(TextModule, ViewerModule, HexModule)
+    val modules: MutableList<FileOpener> = mutableListOf(TextModule, ViewerModule, HexModule, ZipModule)
 
     fun open(a: Activity, f: File) {
         modules.firstOrNull { it.canOpen(f) }?.let { it.open(a, f); return }

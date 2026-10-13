@@ -198,5 +198,13 @@
     <!-- Zip -->
     <string name="zip_compress">Compress to ZIP</string>
     <string name="zip_extract">Extract here</string>
+    <string name="zip_preview">Archive preview</string>
+    <string name="zip_extract_all">Extract all</string>
+    <string name="zip_extract_item">Extract</string>
+    <string name="zip_extracted">Extracted to %s</string>
+    <string name="zip_cannot_read">Can\'t read this archive</string>
+    <string name="zip_empty">Empty archive</string>
+    <string name="zip_extracting">Extracting…</string>
+    <string name="install">Install</string>
     <string name="saving">Saving…</string>
 </resources>

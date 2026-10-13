@@ -638,12 +638,16 @@ class MainActivity : Activity() {
         val p = PopupMenu(this, anchor)
         p.menu.add(0, A_BATCH_RENAME, 0, R.string.rename_by_pattern)
         p.menu.add(0, A_ZIP, 1, R.string.zip_compress)
-        if (sel.size == 1 && !sel[0].isDir && sel[0].ext in ZipOps.EXTRACTABLE) p.menu.add(0, A_UNZIP, 2, R.string.zip_extract)
+        if (sel.size == 1 && !sel[0].isDir && ArchiveOps.isArchive(sel[0].file)) {
+            p.menu.add(0, A_ZIP_PREVIEW, 2, R.string.zip_preview)
+            p.menu.add(0, A_UNZIP, 3, R.string.zip_extract)
+        }
         p.setOnMenuItemClickListener { item ->
             finishSelection()
             when (item.itemId) {
                 A_BATCH_RENAME -> batchRename(sel.map { it.file })
                 A_ZIP -> compress(sel.map { it.file })
+                A_ZIP_PREVIEW -> ZipModule.open(this, sel[0].file)
                 A_UNZIP -> extract(sel[0].file)
             }
             true
@@ -684,18 +688,12 @@ class MainActivity : Activity() {
     }
 
     /** Extracts into a new folder named after the archive, next to it ("a.zip" -> "a", or "a (1)" if taken). */
-    private fun extract(zip: File) {
-        val parent = zip.parentFile ?: return
-        val dest = FileOps.unique(parent, zip.name.substringBeforeLast('.').ifEmpty { zip.name })
+    private fun extract(archive: File) {
+        val parent = archive.parentFile ?: return
+        val dest = FileOps.unique(parent, archive.name.substringBeforeLast('.').ifEmpty { archive.name })
         runOp {
             try {
-                try {
-                    ZipOps.unzip(zip, dest)
-                } catch (e: Exception) {
-                    // Names that aren't UTF-8 (old Windows zips) throw before anything is written: retry as CP437.
-                    if (Build.VERSION.SDK_INT < 24 || e !is IllegalArgumentException && e !is java.util.zip.ZipException) throw e
-                    ZipOps.unzip(zip, dest, charset("IBM437"))
-                }
+                ArchiveOps.extractAll(archive, dest)
             } finally {
                 // Nothing usable came out (empty, unreadable or failed archive): don't leave an empty folder behind.
                 if (dest.list()?.isEmpty() == true) dest.delete()
@@ -851,6 +849,7 @@ class MainActivity : Activity() {
         const val A_ZIP = 11
         const val A_UNZIP = 12
         const val A_BATCH_RENAME = 13
+        const val A_ZIP_PREVIEW = 14
 
         const val REQ_SEARCH = 1
     }

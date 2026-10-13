@@ -23,16 +23,18 @@ object Kinds {
     )
     private val DOC = setOf("doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf", "epub")
 
-    fun color(e: Entry): Int = when {
-        e.isDir -> 0xFFF0B429.toInt()
-        e.ext in IMAGE -> 0xFF43A047.toInt()
-        e.ext in VIDEO -> 0xFFE53935.toInt()
-        e.ext in AUDIO -> 0xFF8E24AA.toInt()
-        e.ext in ARCHIVE -> 0xFF795548.toInt()
-        e.ext == "apk" -> 0xFF00897B.toInt()
-        e.ext == "pdf" -> 0xFFC62828.toInt()
-        e.ext in CODE -> 0xFF1E88E5.toInt()
-        e.ext in DOC -> 0xFF3949AB.toInt()
+    fun color(isDir: Boolean, ext: String): Int = when {
+        isDir -> 0xFFF0B429.toInt()
+        ext in IMAGE -> 0xFF43A047.toInt()
+        ext in VIDEO -> 0xFFE53935.toInt()
+        ext in AUDIO -> 0xFF8E24AA.toInt()
+        ext in ARCHIVE -> 0xFF795548.toInt()
+        ext == "apk" -> 0xFF00897B.toInt()
+        ext == "pdf" -> 0xFFC62828.toInt()
+        ext in CODE -> 0xFF1E88E5.toInt()
+        ext in DOC -> 0xFF3949AB.toInt()
         else -> 0xFF78909C.toInt()
     }
+
+    fun color(e: Entry): Int = color(e.isDir, e.ext)
 }

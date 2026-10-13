@@ -1,5 +1,6 @@
 package x.vladgba.fileman
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
@@ -557,6 +558,7 @@ class ZipActivity : Activity() {
         }
     }
 
+    @SuppressLint("ResourceType") // obtainStyledAttributes index, not a resource id
     private class RowView(ctx: Context) : LinearLayout(ctx) {
         val badge = FileAdapter.Badge(ctx)
         val name = TextView(ctx)

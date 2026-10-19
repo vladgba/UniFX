@@ -43,3 +43,4 @@ app/release/*
 .agentsroom/handoff-summary-*.md
 .agentsroom/fork-context-*.txt
 .claude/
+.agentsroom/transfer-context-*.txt

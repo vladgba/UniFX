@@ -194,15 +194,15 @@ object Syntax {
     private val MARKDOWN = Lang(
         "Markdown",
         listOf(
-            STRING to "```[\\s\\S]*?(?:```|\\z)|`[^`\\n]+`",
-            META to "^#{1,6} [^\\n]*",
-            COMMENT to "^>[^\\n]*",
-            KEYWORD to "\\*\\*[^*\\n]+\\*\\*|__[^_\\n]+__",
-            ATTR to "!?\\[[^\\]\\n]*\\]\\([^)\\n]*\\)",
-            NUMBER to "^[ \\t]*(?:[-*+]|\\d+\\.)(?=\\s)",
+            STRING to "(?:```|~~~)[\\s\\S]*?(?:```|~~~|\\z)|``[^`\\n]+``|`[^`\\n]+`",
+            META to "^#{1,6}[ \\t]+[^\\n]*|^[=-]{2,}[ \\t]*$|^>[ \\t]*\\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\\]|^\\*\\[[^\\]\\n]+\\]:",
+            COMMENT to "^>[^\\n]*|<!--[\\s\\S]*?(?:-->|\\z)",
+            KEYWORD to "\\*\\*\\*[^*\\n]+\\*\\*\\*|___[^_\\n]+___|(?<!\\w)\\*\\*[^*\\n]+\\*\\*(?!\\w)|(?<!\\w)__[^_\\n]+__(?!\\w)|(?<!\\w)\\*[^*\\n]+\\*(?!\\w)|(?<!\\w)_[^_\\n]+_(?!\\w)|~~[^~\\n]+~~|~[^~\\s\\n][^~\\n]*~",
+            ATTR to "\\{\\s*(?:[#.][-\\w]+\\s*)+\\}|\\[\\^[^\\]\\n]+\\]:?|!?\\[[^\\]\\n]*\\](?:\\([^)\\n]*\\)|\\[[^\\]\\n]*\\])|^\\[[^\\^\\]\\n][^\\]\\n]*\\]:[ \\t]+\\S+",
+            NUMBER to "^[ \\t]*(?:[-*+](?:[ \\t]+\\[[ xX]\\])?|\\d+[.)]|:[ \\t])(?=\\s)",
         ),
         Pattern.MULTILINE,
-        blocks = listOf(Block("```", "```", STRING)),
+        blocks = listOf(Block("```", "```", STRING), Block("~~~", "~~~", STRING), Block("<!--", "-->", COMMENT)),
     )
 
     private val BY_EXT: Map<String, Lang> = HashMap<String, Lang>().apply {
@@ -214,7 +214,7 @@ object Syntax {
         reg(JSON, "json jsonc json5 webmanifest")
         reg(CSS, "css scss less")
         reg(SQL, "sql")
-        reg(MARKDOWN, "md markdown")
+        reg(MARKDOWN, "md markdown mdown mkd mkdn")
     }
 
     private val PLAIN_EXT = setOf("txt", "log", "csv", "tsv", "nfo", "srt", "diff", "patch", "bat", "cmd", "lua", "smali", "asm", "s")

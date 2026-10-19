@@ -215,7 +215,8 @@ class EditorActivity : Activity() {
         m.add(0, M_WRAP, 1, R.string.word_wrap).apply { isCheckable = true; isChecked = wrap }
         m.add(0, M_LINES, 2, R.string.line_numbers).apply { isCheckable = true; isChecked = edit.lineNumbers }
         if (lang != null) m.add(0, M_HIGHLIGHT, 3, R.string.highlight_code).apply { isCheckable = true; isChecked = highlightOn }
-        m.add(0, M_HEX, 4, R.string.open_in_hex)
+        if (MarkdownOps.isMarkdown(file)) m.add(0, M_MARKDOWN, 4, R.string.open_in_markdown)
+        m.add(0, M_HEX, 5, R.string.open_in_hex)
         p.setOnMenuItemClickListener { onAction(it.itemId, anchor); true }
         p.show()
     }
@@ -520,6 +521,10 @@ class EditorActivity : Activity() {
                 prefs.edit().putFloat("ed_font", fontSp).apply()
                 highlighter?.schedule(50)
             }
+            M_MARKDOWN -> if (dirty) {
+                Ui.confirmUnsaved(this, file.name, { save { MarkdownModule.open(this, file); finish() } },
+                    { MarkdownModule.open(this, file); finish() })
+            } else { MarkdownModule.open(this, file); finish() }
             M_HEX -> if (dirty) {
                 Ui.confirmUnsaved(this, file.name, { save { HexModule.open(this, file); finish() } },
                     { HexModule.open(this, file); finish() })
@@ -626,5 +631,6 @@ class EditorActivity : Activity() {
         const val M_INVISIBLES = 12
         const val M_BACK = 13
         const val M_MORE = 14
+        const val M_MARKDOWN = 15
     }
 }

@@ -37,7 +37,7 @@ object ZipModule : FileOpener {
 object Openers {
     const val EXTRA_PATH = "x.vladgba.fileman.PATH"
 
-    val modules: MutableList<FileOpener> = mutableListOf(TextModule, ViewerModule, HexModule, ZipModule)
+    val modules: MutableList<FileOpener> = mutableListOf(MarkdownModule, TextModule, ViewerModule, HexModule, ZipModule)
 
     fun open(a: Activity, f: File) {
         modules.firstOrNull { it.canOpen(f) }?.let { it.open(a, f); return }

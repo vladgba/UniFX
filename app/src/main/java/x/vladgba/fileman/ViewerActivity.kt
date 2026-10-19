@@ -925,14 +925,16 @@ class ViewerActivity : Activity() {
         menu.add(0, M_GOTO, 4, R.string.go_to_line)
         menu.add(0, M_HIGHLIGHT, 5, R.string.highlight_code).isCheckable = true
         menu.add(0, M_INVISIBLES, 6, R.string.show_invisibles).isCheckable = true
-        menu.add(0, M_EDIT, 7, R.string.edit)
-        menu.add(0, M_HEX, 8, R.string.open_in_hex)
+        menu.add(0, M_MARKDOWN, 7, R.string.open_in_markdown)
+        menu.add(0, M_EDIT, 8, R.string.edit)
+        menu.add(0, M_HEX, 9, R.string.open_in_hex)
         return true
     }
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
         menu.findItem(M_FIND_NEXT).isVisible = lastQuery != null
         menu.findItem(M_GOTO).isEnabled = index.done
+        menu.findItem(M_MARKDOWN).isVisible = !binary && MarkdownOps.isMarkdown(file)
         menu.findItem(M_EDIT).isVisible = canEdit()
         menu.findItem(M_HIGHLIGHT).apply { isVisible = !binary && Syntax.langFor(file) != null; isChecked = highlightOn }
         menu.findItem(M_INVISIBLES).isChecked = invisibles
@@ -963,6 +965,7 @@ class ViewerActivity : Activity() {
                 clearTextCache()
                 rows.notifyDataSetChanged()
             }
+            M_MARKDOWN -> { MarkdownModule.open(this, file); finish() }
             M_EDIT -> { Openers.launch(this, EditorActivity::class.java, file); finish() }
             M_HEX -> { HexModule.open(this, file); finish() }
             else -> return super.onOptionsItemSelected(item)
@@ -983,5 +986,6 @@ class ViewerActivity : Activity() {
         const val M_HEX = 7
         const val M_HIGHLIGHT = 8
         const val M_INVISIBLES = 9
+        const val M_MARKDOWN = 10
     }
 }
